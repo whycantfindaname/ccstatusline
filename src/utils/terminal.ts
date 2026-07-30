@@ -2,6 +2,10 @@ import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 
+const MIN_STATUSLINE_WIDTH = 20;
+const MAX_STATUSLINE_WIDTH = 1000;
+const FALLBACK_STATUSLINE_WIDTH = 100;
+
 // Get package version
 // __PACKAGE_VERSION__ will be replaced at build time
 const PACKAGE_VERSION = '__PACKAGE_VERSION__';
@@ -32,7 +36,7 @@ export function getPackageVersion(): string {
     return '';
 }
 
-function probeTerminalWidth(): number | null {
+function probeTerminalWidth(includeFallback: boolean): number | null {
     // Explicit override. Useful when ccstatusline is spawned in a context where
     // no ancestor process owns a TTY at all — e.g. some Claude Code >= 2.1.139
     // spawn paths, IDE integrations, or nested-shell scenarios where both the
@@ -41,16 +45,22 @@ function probeTerminalWidth(): number | null {
     // `CCSTATUSLINE_WIDTH=200 ccstatusline ...`) to bypass probing entirely.
     const overrideRaw = process.env.CCSTATUSLINE_WIDTH;
     if (overrideRaw) {
-        const override = parsePositiveInteger(overrideRaw);
+        const override = parseStatuslineWidth(overrideRaw);
         if (override !== null) {
             return override;
         }
     }
 
-    // Preserve historical behavior on Windows: width detection is unavailable.
-    // This avoids Unix fallback command behavior (e.g. 2>/dev/null) on Windows.
+    const columnsRaw = process.env.COLUMNS;
+    if (columnsRaw) {
+        const columns = parseStatuslineWidth(columnsRaw);
+        if (columns !== null) {
+            return columns;
+        }
+    }
+
     if (process.platform === 'win32') {
-        return null;
+        return includeFallback ? FALLBACK_STATUSLINE_WIDTH : null;
     }
 
     // Claude Code can spawn ccstatusline with piped stdio, leaving the immediate
@@ -81,23 +91,26 @@ function probeTerminalWidth(): number | null {
         const width = execSync('tput cols 2>/dev/null', {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore'],
+            timeout: 100,
             windowsHide: true
         }).trim();
 
-        return parsePositiveInteger(width);
+        return parseStatuslineWidth(width);
     } catch {
         // tput also failed
     }
 
-    return null;
+    return includeFallback ? FALLBACK_STATUSLINE_WIDTH : null;
 }
 
-function parsePositiveInteger(value: string): number | null {
-    const parsed = parseInt(value, 10);
-    if (isNaN(parsed) || parsed <= 0) {
+function parseStatuslineWidth(value: string): number | null {
+    if (!/^\d+$/.test(value.trim())) {
         return null;
     }
-
+    const parsed = Number(value.trim());
+    if (!Number.isInteger(parsed) || parsed < MIN_STATUSLINE_WIDTH || parsed > MAX_STATUSLINE_WIDTH) {
+        return null;
+    }
     return parsed;
 }
 
@@ -107,10 +120,12 @@ function getParentProcessId(pid: number): number | null {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore'],
             shell: '/bin/sh',
+            timeout: 100,
             windowsHide: true
         }).trim();
 
-        return parsePositiveInteger(parentPidOutput);
+        const parsed = Number.parseInt(parentPidOutput, 10);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
     } catch {
         return null;
     }
@@ -122,6 +137,7 @@ function getTTYForProcess(pid: number): string | null {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore'],
             shell: '/bin/sh',
+            timeout: 100,
             windowsHide: true
         }).replace(/\s+/g, '');
 
@@ -154,9 +170,10 @@ function getWidthForTTY(tty: string): number | null {
                 encoding: 'utf8',
                 stdio: ['pipe', 'pipe', 'ignore'],
                 shell: '/bin/sh',
+                timeout: 100,
                 windowsHide: true
             }).trim();
-            const parsed = parsePositiveInteger(width);
+            const parsed = parseStatuslineWidth(width);
             if (parsed !== null) {
                 return parsed;
             }
@@ -170,10 +187,10 @@ function getWidthForTTY(tty: string): number | null {
 
 // Get terminal width
 export function getTerminalWidth(): number | null {
-    return probeTerminalWidth();
+    return probeTerminalWidth(true);
 }
 
 // Check if terminal width detection is available
 export function canDetectTerminalWidth(): boolean {
-    return probeTerminalWidth() !== null;
+    return probeTerminalWidth(false) !== null;
 }

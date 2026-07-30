@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "pattern": "^gpt[- ]?5\\.6[- ]?sol(?:$|[ (\\[])",
+      "displayName": "GPT 5.6 Sol"
+    },
+    {
+      "pattern": "^gpt[- ]?5\\.6[- ]?terra(?:$|[ (\\[])",
+      "displayName": "GPT 5.6 Terra"
+    },
+    {
+      "pattern": "deepseek",
+      "displayName": "DeepSeek"
+    },
+    {
+      "pattern": "mimo",
+      "displayName": "MiMo"
+    },
+    {
+      "pattern": "claude.*opus",
+      "displayName": "Claude Opus",
+      "fullContextTokens": 200000,
+      "policyEvidence": "https://code.claude.com/docs/en/model-config"
+    },
+    {
+      "pattern": "claude.*sonnet",
+      "displayName": "Claude Sonnet",
+      "fullContextTokens": 200000,
+      "policyEvidence": "https://code.claude.com/docs/en/model-config"
+    },
+    {
+      "pattern": "claude.*haiku",
+      "displayName": "Claude Haiku",
+      "fullContextTokens": 200000,
+      "policyEvidence": "https://code.claude.com/docs/en/model-config"
+    }
+  ]
+}

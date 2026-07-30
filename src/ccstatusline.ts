@@ -8,8 +8,13 @@ import type {
     TokenMetrics
 } from './types';
 import type { RenderContext } from './types/RenderContext';
+import type { ResolvedSessionIdentity } from './types/SessionIdentity';
 import type { StatusJSON } from './types/StatusJSON';
 import { StatusJSONSchema } from './types/StatusJSON';
+import {
+    applyActivityHook,
+    reconcileActivityTasks
+} from './utils/activity-ledger';
 import { getVisibleText } from './utils/ansi';
 import { updateColorMap } from './utils/colors';
 import {
@@ -33,6 +38,7 @@ import {
     getTokenMetrics
 } from './utils/jsonl';
 import { advanceGlobalPowerlineThemeIndex } from './utils/powerline-theme-index';
+import { RenderDeadline } from './utils/render-deadline';
 import {
     buildConfigWarningBadge,
     calculateMaxWidthsFromPreRendered,
@@ -41,6 +47,7 @@ import {
     renderStatusLine
 } from './utils/renderer';
 import { advanceGlobalSeparatorIndex } from './utils/separator-index';
+import { resolveSessionIdentity } from './utils/session-identity';
 import { getSkillsMetrics } from './utils/skills';
 import {
     getWidgetSpeedWindowSeconds,
@@ -102,6 +109,7 @@ async function ensureWindowsUtf8CodePage() {
 async function renderMultipleLines(data: StatusJSON) {
     const settings = await loadSettings();
     const configError = getConfigLoadError();
+    const deadline = new RenderDeadline();
 
     // Set global chalk level based on settings
     chalk.level = settings.colorLevel;
@@ -126,14 +134,32 @@ async function renderMultipleLines(data: StatusJSON) {
         }
     }
 
+    const tokenMetricWidgetTypes = new Set([
+        'tokens-input',
+        'tokens-output',
+        'tokens-cached',
+        'tokens-total',
+        'cache-hit-rate',
+        'cache-read',
+        'cache-write',
+        'context-length',
+        'context-percentage',
+        'context-percentage-usable',
+        'context-bar'
+    ]);
+    const needsTokenMetrics = lines.some(line => line.some(item => tokenMetricWidgetTypes.has(item.type)));
+
     let tokenMetrics: TokenMetrics | null = null;
-    if (data.transcript_path) {
+    if (needsTokenMetrics && data.transcript_path && !deadline.expired()) {
         tokenMetrics = await getTokenMetrics(data.transcript_path);
     }
 
+    const sessionIdentity = await resolveSessionIdentity(data, { deadline });
+
     let sessionDuration: string | null = null;
     if (hasSessionClock && !hasSessionDurationInStatusJson(data) && data.transcript_path) {
-        sessionDuration = await getSessionDuration(data.transcript_path);
+        sessionDuration = formatResolvedSessionDuration(sessionIdentity)
+            ?? (deadline.expired() ? null : await getSessionDuration(data.transcript_path));
     }
 
     const usageData = await prefetchUsageDataIfNeeded(lines, data);
@@ -151,7 +177,8 @@ async function renderMultipleLines(data: StatusJSON) {
     }
 
     let skillsMetrics: SkillsMetrics | null = null;
-    if (data.session_id) {
+    const hasSkillsWidget = lines.some(line => line.some(item => item.type === 'skills'));
+    if (hasSkillsWidget && data.session_id && !deadline.expired()) {
         skillsMetrics = getSkillsMetrics(data.session_id);
     }
 
@@ -171,6 +198,8 @@ async function renderMultipleLines(data: StatusJSON) {
         sessionDuration,
         skillsMetrics,
         compactionData,
+        sessionIdentity,
+        renderDeadline: deadline,
         terminalWidth: getTerminalWidth(),
         isPreview: false,
         minimalist: settings.minimalistMode,
@@ -263,6 +292,28 @@ async function renderMultipleLines(data: StatusJSON) {
     }
 }
 
+function formatResolvedSessionDuration(identity: ResolvedSessionIdentity): string | null {
+    const start = identity.activity.sessionStartedAt
+        ? Date.parse(identity.activity.sessionStartedAt)
+        : Number.NaN;
+    const end = identity.activity.sessionUpdatedAt
+        ? Date.parse(identity.activity.sessionUpdatedAt)
+        : Date.now();
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+        return null;
+    }
+    const totalMinutes = Math.floor((end - start) / 60000);
+    if (totalMinutes < 1) {
+        return '<1m';
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours === 0) {
+        return `${minutes}m`;
+    }
+    return minutes === 0 ? `${hours}hr` : `${hours}hr ${minutes}m`;
+}
+
 function parseConfigArg(): string | undefined {
     const idx = process.argv.indexOf('--config');
     if (idx === -1)
@@ -279,6 +330,51 @@ function parseConfigArg(): string | undefined {
 async function handleHook(): Promise<void> {
     const input = await readStdin();
     handleHookInput(input);
+}
+
+async function handleActivityHook(): Promise<void> {
+    const input = await readStdin();
+    if (!input) {
+        return;
+    }
+    try {
+        const parsed = JSON.parse(input) as unknown;
+        if (parsed && typeof parsed === 'object') {
+            await applyActivityHook(parsed, { deadline: new RenderDeadline(1500) });
+        }
+    } catch {
+        // Lifecycle observability is best-effort and intentionally silent.
+    }
+}
+
+function sanitizeTaskText(value: unknown): string {
+    return typeof value === 'string'
+        ? value.replace(/[\u0000-\u001F\u007F-\u009F]/g, '').replace(/\s+/g, ' ').trim()
+        : '';
+}
+
+async function renderSubagentStatusLine(data: StatusJSON): Promise<void> {
+    await reconcileActivityTasks(data.session_id, data.tasks, { deadline: new RenderDeadline(350) });
+
+    const columns = typeof data.columns === 'number' && Number.isFinite(data.columns)
+        ? Math.max(20, Math.min(1000, Math.floor(data.columns)))
+        : 100;
+    for (const task of data.tasks ?? []) {
+        const id = sanitizeTaskText(task.id);
+        if (!id) {
+            continue;
+        }
+        const title = sanitizeTaskText(task.name ?? task.label ?? task.type ?? task.id);
+        const description = sanitizeTaskText(task.description);
+        const tokenCount = typeof task.tokenCount === 'number' && Number.isFinite(task.tokenCount)
+            ? `${Math.max(0, Math.floor(task.tokenCount)).toLocaleString('en-US')} tokens`
+            : '';
+        const content = [title, description, tokenCount].filter(Boolean).join(' · ');
+        console.log(JSON.stringify({
+            id,
+            content: getVisibleText(content).slice(0, columns)
+        }));
+    }
 }
 
 function handleGitReviewRefresh(): boolean {
@@ -320,6 +416,11 @@ async function main() {
         return;
     }
 
+    if (process.argv.includes('--activity-hook')) {
+        await handleActivityHook();
+        return;
+    }
+
     // Check if we're in a piped/non-TTY environment first
     if (!process.stdin.isTTY) {
         await ensureWindowsUtf8CodePage();
@@ -333,6 +434,11 @@ async function main() {
                 if (!result.success) {
                     console.error('Invalid status JSON format:', result.error.message);
                     process.exit(1);
+                }
+
+                if (process.argv.includes('--subagent')) {
+                    await renderSubagentStatusLine(result.data);
+                    return;
                 }
 
                 await renderMultipleLines(result.data);

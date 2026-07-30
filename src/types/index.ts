@@ -14,6 +14,11 @@ export { getColorLevelString } from './ColorLevel';
 export type { StatusJSON } from './StatusJSON';
 export type { TokenMetrics, TokenUsage, TranscriptLine } from './TokenMetrics';
 export type { RenderContext } from './RenderContext';
+export type {
+    ModelRegistryEntry,
+    ProviderRegistryEntry,
+    ResolvedSessionIdentity
+} from './SessionIdentity';
 export type { PowerlineFontStatus } from './PowerlineFontStatus';
 export type { ClaudeSettings } from './ClaudeSettings';
 export type { ColorEntry } from './ColorEntry';

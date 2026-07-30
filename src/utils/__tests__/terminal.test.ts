@@ -43,11 +43,13 @@ describe('terminal utils', () => {
         vi.clearAllMocks();
         vi.restoreAllMocks();
         delete process.env.CCSTATUSLINE_WIDTH;
+        delete process.env.COLUMNS;
     });
 
     afterEach(() => {
         vi.restoreAllMocks();
         delete process.env.CCSTATUSLINE_WIDTH;
+        delete process.env.COLUMNS;
         setPlatform(ORIGINAL_PLATFORM);
     });
 
@@ -142,7 +144,7 @@ describe('terminal utils', () => {
         expect(mockExecSync.mock.calls[1]?.[0]).toBe('tput cols 2>/dev/null');
     });
 
-    it('returns null when ancestor and fallback probes fail', () => {
+    it('returns the conservative width when ancestor and fallback probes fail', () => {
         pinPosixPlatform();
         mockExecSync.mockImplementation((command: string) => {
             if (command === `ps -o ppid= -p ${process.pid}`) {
@@ -170,7 +172,7 @@ describe('terminal utils', () => {
             throw new Error(`Unexpected command: ${command}`);
         });
 
-        expect(getTerminalWidth()).toBeNull();
+        expect(getTerminalWidth()).toBe(100);
     });
 
     it('detects availability when an ancestor tty probe succeeds', () => {
@@ -215,6 +217,30 @@ describe('terminal utils', () => {
 
         expect(getTerminalWidth()).toBe(220);
         expect(mockExecSync.mock.calls.length).toBe(0);
+    });
+
+    it('uses COLUMNS after the explicit override and before tty probing', () => {
+        process.env.COLUMNS = '132';
+
+        expect(getTerminalWidth()).toBe(132);
+        expect(mockExecSync.mock.calls.length).toBe(0);
+    });
+
+    it('keeps CCSTATUSLINE_WIDTH ahead of COLUMNS', () => {
+        process.env.CCSTATUSLINE_WIDTH = '144';
+        process.env.COLUMNS = '132';
+
+        expect(getTerminalWidth()).toBe(144);
+        expect(mockExecSync.mock.calls.length).toBe(0);
+    });
+
+    it('ignores COLUMNS outside the supported range', () => {
+        pinPosixPlatform();
+        process.env.COLUMNS = '1001';
+        mockExecSync.mockImplementationOnce(() => { throw new Error('tty unavailable'); });
+        mockExecSync.mockImplementationOnce(() => { throw new Error('tput unavailable'); });
+
+        expect(getTerminalWidth()).toBe(100);
     });
 
     it('ignores a non-positive CCSTATUSLINE_WIDTH and falls back to probing', () => {
@@ -272,10 +298,10 @@ describe('terminal utils', () => {
         expect(mockExecSync.mock.calls.length).toBe(0);
     });
 
-    it('disables width detection on Windows', () => {
+    it('uses the conservative fallback on Windows', () => {
         setPlatform('win32');
 
-        expect(getTerminalWidth()).toBeNull();
+        expect(getTerminalWidth()).toBe(100);
         expect(canDetectTerminalWidth()).toBe(false);
         expect(mockExecSync.mock.calls.length).toBe(0);
     });

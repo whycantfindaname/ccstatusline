@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "id": "claude-official",
+      "displayName": "Claude Official",
+      "origins": []
+    },
+    {
+      "displayName": "ClipProxyAPI",
+      "origins": [
+        "http://localhost:8317",
+        "http://127.0.0.1:8317"
+      ]
+    },
+    {
+      "displayName": "Claude duck relay",
+      "hostnames": [
+        "api.duckcoding.ai"
+      ]
+    },
+    {
+      "displayName": "Xiaomi MiMo",
+      "hostnames": [
+        "token-plan-cn.xiaomimimo.com"
+      ]
+    },
+    {
+      "displayName": "DeepSeek",
+      "hostnames": [
+        "api.deepseek.com"
+      ]
+    }
+  ]
+}

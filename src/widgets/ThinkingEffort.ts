@@ -67,6 +67,11 @@ export class ThinkingEffortWidget implements Widget {
             return item.rawValue ? 'high' : 'Thinking: high';
         }
 
+        if (context.sessionIdentity) {
+            const effort = context.sessionIdentity.effort?.level;
+            return effort ? (item.rawValue ? effort : `Effort ${effort}`) : null;
+        }
+
         const effort = formatEffort(resolveThinkingEffort(context));
         return item.rawValue ? effort : `Thinking: ${effort}`;
     }

@@ -307,6 +307,33 @@ bunx -y ccstatusline@latest
 
 Both commands launch the same TUI. During the initial setup flow, choose **Pinned global install** if you want Claude Code to stay on the ccstatusline version you are running instead of following `@latest`; the TUI will install that version globally with npm or Bun and write the pinned `ccstatusline` command to Claude Code settings. After a pinned install, you can run `ccstatusline` directly to launch the TUI in the future.
 
+### Install this fork's four-line preset
+
+This fork includes a self-contained immutable-release installer:
+
+```bash
+bun install
+bun run deploy:local --check
+bun run deploy:local --apply
+```
+
+It installs beside `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`, follows
+that file when it is a symlink, and preserves unrelated Claude settings.
+CCSwitch provider discovery is optional: default `auto` mode falls back to the
+bundled provider registry when CCSwitch is absent or unavailable.
+
+```bash
+# Skip CCSwitch discovery
+bun run deploy:local --check --ccswitch=off
+
+# Require working CCSwitch discovery
+bun run deploy:local --check --ccswitch=required
+```
+
+See the [portable deployment runbook](docs/superpowers/runbooks/ccswitch-aware-statusline.md)
+for path overrides, rollback, machine migration, and the new-session reload
+boundary.
+
 <br />
 <details>
 <summary><b>Configure ccstatusline</b></summary>

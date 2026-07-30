@@ -33,6 +33,7 @@ import {
     isGradientSpec,
     parseGradientSpec
 } from './gradient';
+import { planResponsiveLine } from './responsive-layout';
 import { getTerminalWidth } from './terminal';
 import { getWidget } from './widgets';
 
@@ -72,6 +73,9 @@ function resolveEffectiveTerminalWidth(
     settings: Settings,
     context: RenderContext
 ): number | null {
+    if (settings.lines.some(line => line.some(item => item.responsive !== undefined))) {
+        return detectedWidth;
+    }
     if (!detectedWidth) {
         return null;
     }
@@ -795,6 +799,10 @@ export function preRenderAllWidgets(
 
     // Process each line
     for (const lineWidgets of allLinesWidgets) {
+        if (lineWidgets.some(item => item.responsive !== undefined)) {
+            preRenderedLines.push(planResponsiveLine(lineWidgets, settings, context));
+            continue;
+        }
         const preRenderedLine: PreRenderedWidget[] = [];
 
         for (const widget of lineWidgets) {

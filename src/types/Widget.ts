@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { RenderContext } from './RenderContext';
 import type { Settings } from './Settings';
 
+export const ResponsiveVariantSchema = z.enum(['full', 'short', 'value-only', 'hidden']);
+
 // Widget item schema - accepts any string type for forward compatibility
 export const WidgetItemSchema = z.object({
     id: z.string(),
@@ -22,6 +24,14 @@ export const WidgetItemSchema = z.object({
     merge: z.union([z.boolean(), z.literal('no-padding')]).optional(),
     hide: z.boolean().optional(),
     excludeFromAutoAlign: z.boolean().optional(),
+    responsive: z.object({
+        visibilityPriority: z.number(),
+        variants: z.array(ResponsiveVariantSchema).min(1),
+        mediumStart: ResponsiveVariantSchema.optional(),
+        narrowStart: ResponsiveVariantSchema.optional(),
+        shortLabel: z.string().optional(),
+        allowValueTruncate: z.boolean().optional()
+    }).optional(),
     metadata: z.record(z.string(), z.string()).optional()
 });
 
@@ -41,6 +51,12 @@ export interface Widget {
     getCategory(): string;
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay;
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null;
+    renderResponsive?(
+        item: WidgetItem,
+        context: RenderContext,
+        settings: Settings,
+        mode: z.infer<typeof ResponsiveVariantSchema>
+    ): string | null;
     getCustomKeybinds?(item?: WidgetItem): CustomKeybind[];
     renderEditor?(props: WidgetEditorProps): React.ReactElement | null;
     supportsRawValue(): boolean;

@@ -17,7 +17,7 @@ import {
 } from '../package-manager-executable';
 
 function mockExecFileSync(responses: Record<string, string>) {
-    return vi.spyOn(childProcess, 'execFileSync').mockImplementation((command, args) => {
+    const spy = vi.spyOn(childProcess, 'execFileSync').mockImplementation((command, args) => {
         const key = `${command} ${(args as string[]).join(' ')}`;
         const response = responses[key];
 
@@ -27,6 +27,8 @@ function mockExecFileSync(responses: Record<string, string>) {
 
         return response;
     });
+    spy.mockClear();
+    return spy;
 }
 
 describe('global command resolution', () => {

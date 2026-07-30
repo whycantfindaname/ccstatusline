@@ -304,6 +304,9 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
     const memoryCacheKey = `${cacheToken}|${cwd ?? ''}`;
     const persistentCacheKey = cacheToken;
     const metadata = getGitRepoMetadata(cwd);
+    if (cwd && !metadata && fs.existsSync(cwd)) {
+        return null;
+    }
     const ttlMs = getGitCacheTtlMs(context);
     const now = Date.now();
 
@@ -319,6 +322,10 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
         return persistentEntry.output;
     }
 
+    if (context.renderDeadline?.expired()) {
+        return null;
+    }
+
     // --no-optional-locks (or GIT_OPTIONAL_LOCKS=0) prevents read-only commands
     // (diff, status, rev-list, ...) from racing on .git/index.lock when another
     // git process is writing it.
@@ -327,10 +334,19 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
     // See https://git-scm.com/docs/git#Documentation/git.txt---no-optional-locks
 
     try {
+        const configuredTimeout = Number.parseInt(process.env.CCSTATUSLINE_GIT_TIMEOUT_MS ?? '', 10);
+        const localTimeout = Number.isInteger(configuredTimeout) && configuredTimeout > 0
+            ? Math.min(configuredTimeout, 120)
+            : 60;
+        const timeout = context.renderDeadline?.limit(localTimeout) ?? localTimeout;
+        if (timeout === 0) {
+            return null;
+        }
         const output = execFileSync('git', args, {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore'],
             env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+            timeout,
             windowsHide: true,
             ...(cwd ? { cwd } : {})
         }).trimEnd();

@@ -20,6 +20,11 @@ export class ModelWidget implements Widget {
             return item.rawValue ? 'Claude' : 'Model: Claude';
         }
 
+        const resolvedModel = context.sessionIdentity?.model.displayName;
+        if (resolvedModel) {
+            return item.rawValue ? resolvedModel : `Model: ${resolvedModel}`;
+        }
+
         const model = context.data?.model;
         const modelDisplayName = typeof model === 'string'
             ? model

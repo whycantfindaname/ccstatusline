@@ -17,6 +17,7 @@ export interface LayoutWidgetManifestEntry {
 }
 
 export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
+    { type: 'provider', create: () => new widgets.ProviderWidget() },
     { type: 'model', create: () => new widgets.ModelWidget() },
     { type: 'output-style', create: () => new widgets.OutputStyleWidget() },
     { type: 'git-branch', create: () => new widgets.GitBranchWidget() },
@@ -66,9 +67,14 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'total-speed', create: () => new widgets.TotalSpeedWidget() },
     { type: 'context-length', create: () => new widgets.ContextLengthWidget() },
     { type: 'context-window', create: () => new widgets.ContextWindowWidget() },
+    { type: 'effective-context', create: () => new widgets.EffectiveContextWidget() },
+    { type: 'full-context-window', create: () => new widgets.FullContextWindowWidget() },
+    { type: 'prompt-cache-freshness', create: () => new widgets.PromptCacheFreshnessWidget() },
     { type: 'context-percentage', create: () => new widgets.ContextPercentageWidget() },
     { type: 'context-percentage-usable', create: () => new widgets.ContextPercentageUsableWidget() },
     { type: 'session-clock', create: () => new widgets.SessionClockWidget() },
+    { type: 'agent-activity', create: () => new widgets.AgentActivityWidget() },
+    { type: 'tool-activity', create: () => new widgets.ToolActivityWidget() },
     { type: 'session-cost', create: () => new widgets.SessionCostWidget() },
     { type: 'block-timer', create: () => new widgets.BlockTimerWidget() },
     { type: 'terminal-width', create: () => new widgets.TerminalWidthWidget() },
@@ -83,6 +89,7 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'session-name', create: () => new widgets.SessionNameWidget() },
     { type: 'free-memory', create: () => new widgets.FreeMemoryWidget() },
     { type: 'session-usage', create: () => new widgets.SessionUsageWidget() },
+    { type: 'native-quota', create: () => new widgets.NativeQuotaWidget() },
     { type: 'weekly-usage', create: () => new widgets.WeeklyUsageWidget() },
     { type: 'extra-usage-utilization', create: () => new widgets.ExtraUsageUtilizationWidget() },
     { type: 'extra-usage-remaining', create: () => new widgets.ExtraUsageRemainingWidget() },

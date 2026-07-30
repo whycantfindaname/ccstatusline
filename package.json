@@ -24,8 +24,10 @@
   "scripts": {
     "start": "bun run src/ccstatusline.ts",
     "build": "rm -rf dist/* ; bun build src/ccstatusline.ts --target=node --outfile=dist/ccstatusline.js --target-version=14",
+    "build:local-runtime": "bun build --compile dist/ccstatusline.js --outfile=dist/ccstatusline-local",
     "postbuild": "bun run scripts/replace-version.ts",
     "example": "cat scripts/payload.example.json | bun start",
+    "deploy:local": "bun run scripts/deploy-local.ts",
     "video:studio": "remotion studio remotion/index.ts",
     "video:still": "remotion still remotion/index.ts ccstatusline-tui-demo out/ccstatusline-tui-demo.png --frame=700 --scale=0.5",
     "video:render": "remotion render remotion/index.ts ccstatusline-tui-demo out/ccstatusline-tui-demo.mp4",

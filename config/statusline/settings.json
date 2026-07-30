@@ -1,0 +1,215 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "provider",
+        "type": "provider",
+        "color": "cyan",
+        "responsive": {
+          "visibilityPriority": 100,
+          "variants": ["full", "short", "value-only"],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "P",
+          "allowValueTruncate": true
+        }
+      },
+      {
+        "id": "model",
+        "type": "model",
+        "color": "brightCyan",
+        "responsive": {
+          "visibilityPriority": 99,
+          "variants": ["full", "short", "value-only"],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "M",
+          "allowValueTruncate": true
+        }
+      },
+      {
+        "id": "effort",
+        "type": "thinking-effort",
+        "color": "magenta",
+        "responsive": {
+          "visibilityPriority": 60,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "E"
+        }
+      }
+    ],
+    [
+      {
+        "id": "project",
+        "type": "current-working-dir",
+        "color": "blue",
+        "responsive": {
+          "visibilityPriority": 70,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "git-branch",
+        "type": "git-branch",
+        "color": "magenta",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 68,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-changes",
+        "type": "git-changes",
+        "color": "yellow",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 66,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "version",
+        "type": "version",
+        "color": "brightBlack",
+        "responsive": {
+          "visibilityPriority": 30,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "CC"
+        }
+      }
+    ],
+    [
+      {
+        "id": "full-context",
+        "type": "full-context-window",
+        "color": "blue",
+        "responsive": {
+          "visibilityPriority": 90,
+          "variants": ["full", "short", "value-only"],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "Ctx"
+        }
+      },
+      {
+        "id": "compact-context",
+        "type": "effective-context",
+        "color": "yellow",
+        "responsive": {
+          "visibilityPriority": 88,
+          "variants": ["full", "short", "value-only"],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "Cmp"
+        }
+      },
+      {
+        "id": "cache-age",
+        "type": "prompt-cache-freshness",
+        "color": "brightBlack",
+        "responsive": {
+          "visibilityPriority": 28,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "Cache"
+        }
+      }
+    ],
+    [
+      {
+        "id": "agents",
+        "type": "agent-activity",
+        "color": "magenta",
+        "responsive": {
+          "visibilityPriority": 50,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "A"
+        }
+      },
+      {
+        "id": "tools",
+        "type": "tool-activity",
+        "color": "green",
+        "responsive": {
+          "visibilityPriority": 25,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "T"
+        }
+      },
+      {
+        "id": "session",
+        "type": "session-clock",
+        "color": "yellow",
+        "responsive": {
+          "visibilityPriority": 48,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "S"
+        }
+      },
+      {
+        "id": "quota",
+        "type": "native-quota",
+        "color": "brightBlue",
+        "responsive": {
+          "visibilityPriority": 20,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "cost",
+        "type": "session-cost",
+        "color": "green",
+        "responsive": {
+          "visibilityPriority": 18,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      }
+    ]
+  ],
+  "flexMode": "full",
+  "compactThreshold": 75,
+  "colorLevel": 2,
+  "defaultSeparator": " │ ",
+  "defaultPadding": "",
+  "defaultPaddingSide": "both",
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "gitCacheTtlSeconds": 5,
+  "minimalistMode": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [""],
+    "separatorInvertBackground": [false],
+    "startCaps": [],
+    "endCaps": [],
+    "autoAlign": false,
+    "continueThemeAcrossLines": false
+  }
+}

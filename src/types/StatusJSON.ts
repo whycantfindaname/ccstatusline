@@ -24,6 +24,16 @@ export type RateLimitPeriod = z.infer<typeof RateLimitPeriodSchema>;
 export const StatusJSONSchema = z.looseObject({
     hook_event_name: z.string().optional(),
     session_id: z.string().optional(),
+    columns: CoercedNumberSchema.optional(),
+    tasks: z.array(z.looseObject({
+        id: z.string().optional(),
+        name: z.string().optional(),
+        type: z.string().optional(),
+        status: z.string().optional(),
+        description: z.string().optional(),
+        label: z.string().optional(),
+        tokenCount: CoercedNumberSchema.optional()
+    })).optional(),
     transcript_path: z.string().optional(),
     cwd: z.string().optional(),
     model: z.union([

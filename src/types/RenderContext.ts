@@ -2,7 +2,9 @@ import type {
     BlockMetrics,
     SkillsMetrics
 } from '../types';
+import type { RenderDeadline } from '../utils/render-deadline';
 
+import type { ResolvedSessionIdentity } from './SessionIdentity';
 import type { SpeedMetrics } from './SpeedMetrics';
 import type { StatusJSON } from './StatusJSON';
 import type { TokenMetrics } from './TokenMetrics';
@@ -42,6 +44,8 @@ export interface RenderContext {
     blockMetrics?: BlockMetrics | null;
     skillsMetrics?: SkillsMetrics | null;
     compactionData?: CompactionData | null;
+    sessionIdentity?: ResolvedSessionIdentity | null;
+    renderDeadline?: RenderDeadline;
     terminalWidth?: number | null;
     isPreview?: boolean;
     minimalist?: boolean;
