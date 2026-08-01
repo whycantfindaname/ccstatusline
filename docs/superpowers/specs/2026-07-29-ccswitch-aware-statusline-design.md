@@ -250,6 +250,17 @@ output reuses that exact cache. A cold miss emits an explicit
 `Statusline refreshing` frame, so the dispatcher never returns an empty
 statusline.
 
+Git insertion and deletion totals use a separate stale-while-revalidate
+snapshot. The foreground renderer performs only bounded repository discovery
+and cache reads. A cache miss renders `(+?,-?)`; an expired successful snapshot
+renders `(+A,-D)~` while one detached refresh runs. The refresh key is derived
+from the linked worktree git-dir, so sibling worktrees cannot share counts. A
+mode-`0600` temporary file is atomically renamed after both staged and unstaged
+diff commands complete within one five-second deadline. A single-flight lock
+prevents duplicate workers, expires after 30 seconds, and is always released by
+the internal refresh entrypoint. Failed refreshes retain the last successful
+snapshot and never publish synthetic zero counts.
+
 ## 10. CLI contract
 
 ```bash
@@ -281,7 +292,10 @@ its first state change. A successful identical rerun reports `no-op`.
    tests.
 9. Every dispatcher execution returns a current frame, an exact-session cached
    frame, or an explicit refresh frame.
-10. Source, fixtures, generated repository configuration, commit metadata, and
+10. A cold Git snapshot renders unknown, a slow worktree refreshes outside the
+    foreground budget, and the next render shows the measured counts; timeout,
+    stale-cache, single-flight, atomic-write, and linked-worktree tests pass.
+11. Source, fixtures, generated repository configuration, commit metadata, and
     documentation contain no credentials, personal paths, runtime databases, or
     private machine identifiers.
 

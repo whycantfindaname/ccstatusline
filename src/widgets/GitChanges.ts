@@ -8,7 +8,8 @@ import type {
 } from '../types/Widget';
 import {
     getGitChangeCounts,
-    isInsideGitWorkTree
+    isInsideGitWorkTree,
+    type GitChangeCounts
 } from '../utils/git';
 
 import {
@@ -17,6 +18,14 @@ import {
     handleToggleNoGitAction,
     isHideNoGitEnabled
 } from './shared/git-no-git';
+
+export function formatGitChanges(changes: GitChangeCounts | null): string {
+    if (!changes) {
+        return '(+?,-?)';
+    }
+    const staleMarker = changes.stale ? '~' : '';
+    return `(+${changes.insertions},-${changes.deletions})${staleMarker}`;
+}
 
 export class GitChangesWidget implements Widget {
     getDefaultColor(): string { return 'yellow'; }
@@ -46,7 +55,7 @@ export class GitChangesWidget implements Widget {
         }
 
         const changes = getGitChangeCounts(context);
-        return `(+${changes.insertions},-${changes.deletions})`;
+        return formatGitChanges(changes);
     }
 
     getCustomKeybinds(): CustomKeybind[] {

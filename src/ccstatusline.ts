@@ -28,6 +28,10 @@ import {
     saveSettings
 } from './utils/config';
 import {
+    GIT_CHANGE_REFRESH_FLAG,
+    refreshGitChangeCacheFromCli
+} from './utils/git-change-cache';
+import {
     GIT_REVIEW_REFRESH_FLAG,
     refreshGitReviewCacheFromCli
 } from './utils/git-review-cache';
@@ -394,10 +398,24 @@ function handleGitReviewRefresh(): boolean {
     return true;
 }
 
+function handleGitChangeRefresh(): boolean {
+    const flagIndex = process.argv.indexOf(GIT_CHANGE_REFRESH_FLAG);
+    if (flagIndex === -1) {
+        return false;
+    }
+
+    const cwd = process.argv[flagIndex + 1];
+    const lockPath = process.argv[flagIndex + 2];
+    if (cwd && lockPath) {
+        refreshGitChangeCacheFromCli(cwd, lockPath);
+    }
+    return true;
+}
+
 async function main() {
     // Detached cache refreshes re-enter this executable without reading stdin
     // or loading user settings. This mode intentionally emits no output.
-    if (handleGitReviewRefresh()) {
+    if (handleGitChangeRefresh() || handleGitReviewRefresh()) {
         return;
     }
 

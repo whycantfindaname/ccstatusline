@@ -14,7 +14,6 @@ import {
 import type { RenderContext } from '../../types/RenderContext';
 import {
     clearGitCache,
-    getGitChangeCounts,
     getGitFileStatusCounts,
     getGitStatus,
     isInsideGitWorkTree,
@@ -320,37 +319,6 @@ describe('git utils', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
 
             expect(isInsideGitWorkTree({})).toBe(false);
-        });
-    });
-
-    describe('getGitChangeCounts', () => {
-        it('sums staged and unstaged insertions/deletions', () => {
-            mockExecFileSync.mockReturnValueOnce('1 file changed, 2 insertions(+), 1 deletion(-)');
-            mockExecFileSync.mockReturnValueOnce('1 file changed, 3 insertions(+), 4 deletions(-)');
-
-            expect(getGitChangeCounts({})).toEqual({
-                insertions: 5,
-                deletions: 5
-            });
-        });
-
-        it('handles singular insertion/deletion forms', () => {
-            mockExecFileSync.mockReturnValueOnce('1 file changed, 1 insertion(+), 1 deletion(-)');
-            mockExecFileSync.mockReturnValueOnce('');
-
-            expect(getGitChangeCounts({})).toEqual({
-                insertions: 1,
-                deletions: 1
-            });
-        });
-
-        it('returns zero counts when git diff commands fail', () => {
-            mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
-
-            expect(getGitChangeCounts({})).toEqual({
-                insertions: 0,
-                deletions: 0
-            });
         });
     });
 
