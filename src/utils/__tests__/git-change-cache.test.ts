@@ -294,10 +294,23 @@ describe('git change cache', () => {
         });
     });
 
-    it('returns stale data with a marker state while scheduling one refresh', () => {
+    it('does not continuously refresh when the configured TTL matches the foreground interval', () => {
         const harness = createHarness();
         populateSnapshot(harness);
         harness.advanceNow(5_001);
+
+        expect(getCachedGitChangeCounts('/repo/worktree', 5_000, harness.deps)).toMatchObject({
+            insertions: 5,
+            deletions: 5,
+            stale: false
+        });
+        expect(harness.spawnCalls).toHaveLength(1);
+    });
+
+    it('returns stale data with a marker state after the age refresh floor', () => {
+        const harness = createHarness();
+        populateSnapshot(harness);
+        harness.advanceNow(30_001);
 
         expect(getCachedGitChangeCounts('/repo/worktree', 5_000, harness.deps)).toMatchObject({
             insertions: 5,
@@ -329,7 +342,7 @@ describe('git change cache', () => {
     it('keeps the last successful snapshot when a refresh fails', () => {
         const harness = createHarness();
         populateSnapshot(harness);
-        harness.advanceNow(5_001);
+        harness.advanceNow(30_001);
         expect(getCachedGitChangeCounts('/repo/worktree', 5_000, harness.deps)?.stale).toBe(true);
         harness.queueExec(new Error('git timed out'));
 

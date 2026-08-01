@@ -258,7 +258,9 @@ from the linked worktree git-dir, so sibling worktrees cannot share counts. A
 mode-`0600` temporary file is atomically renamed after both staged and unstaged
 diff commands complete within one five-second deadline. A single-flight lock
 prevents duplicate workers, expires after 30 seconds, and is always released by
-the internal refresh entrypoint. Failed refreshes retain the last successful
+the internal refresh entrypoint. Age-based refreshes have a 30-second floor so a
+slow worktree cannot remain in a continuous refresh loop; HEAD or index changes
+still invalidate immediately. Failed refreshes retain the last successful
 snapshot and never publish synthetic zero counts.
 
 ## 10. CLI contract

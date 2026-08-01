@@ -73,6 +73,7 @@ export interface GitChangeCacheDeps {
 
 const CACHE_SCHEMA_VERSION = 1 as const;
 const DEFAULT_REFRESH_TIMEOUT_MS = 5_000;
+const MIN_AGE_REFRESH_INTERVAL_MS = 30_000;
 const MAX_REFRESH_TIMEOUT_MS = 15_000;
 const REFRESH_LOCK_STALE_MS = 30_000;
 export const GIT_CHANGE_REFRESH_FLAG = '--internal-refresh-git-change-cache';
@@ -216,7 +217,14 @@ function readCache(
 
         const metadataChanged = parsed.headMtimeMs !== identity.headMtimeMs
             || parsed.indexMtimeMs !== identity.indexMtimeMs;
-        const ageExpired = ttlMs > 0 && deps.now() - parsed.refreshedAt > ttlMs;
+        // A foreground TTL as short as the statusline refresh interval would
+        // keep a slow worktree in an almost continuous refresh loop. Metadata
+        // changes still invalidate immediately; age-only refreshes use a floor.
+        const ageRefreshInterval = ttlMs > 0
+            ? Math.max(ttlMs, MIN_AGE_REFRESH_INTERVAL_MS)
+            : 0;
+        const ageExpired = ageRefreshInterval > 0
+            && deps.now() - parsed.refreshedAt > ageRefreshInterval;
         return {
             data: parsed,
             stale: metadataChanged || ageExpired
