@@ -189,8 +189,9 @@ Stable dispatchers read `active-release` once, validate the ID and release-root
 containment, then execute one immutable release. A single refresh therefore
 uses one coherent version of the executable and configuration. Preflight uses
 `sha256sum` when available and otherwise uses the stock macOS
-`shasum -a 256`. Renderer and hook budgets use a POSIX `/bin/sh` watchdog, not
-GNU `timeout` or `timeout --kill-after`.
+`shasum -a 256`. Renderer and hook budgets use the bundled runtime's detached
+process-group supervisor, not GNU `timeout` or `timeout --kill-after`; deadline
+termination covers the renderer or hook and all of its descendants.
 
 ## 8. Settings transaction
 

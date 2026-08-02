@@ -438,52 +438,11 @@ case "$release_root" in
   *) exit 0 ;;
 esac
 export CCSTATUSLINE_RELEASE_ROOT="$release_root"
-hook_pid=''
-watchdog_pid=''
-cleanup() {
-  if [ -n "$watchdog_pid" ]; then
-    kill -TERM "$watchdog_pid" 2>/dev/null || true
-  fi
-  if [ -n "$hook_pid" ]; then
-    kill -KILL "$hook_pid" 2>/dev/null || true
-  fi
-}
-trap cleanup EXIT
-trap 'exit 0' HUP INT TERM
 status=0
-exec 3<&0
-"$release_root/bin/ccstatusline-hook" "$@" <&3 &
-hook_pid=$!
-exec 3<&-
-(
-  timer_pid=''
-  stop_watchdog() {
-    if [ -n "$timer_pid" ]; then
-      kill -TERM "$timer_pid" 2>/dev/null || true
-      wait "$timer_pid" 2>/dev/null || true
-    fi
-    exit 0
-  }
-  trap stop_watchdog HUP INT TERM
-  sleep 2 &
-  timer_pid=$!
-  wait "$timer_pid" || exit 0
-  timer_pid=''
-  kill -TERM "$hook_pid" 2>/dev/null || exit 0
-  sleep 0.1 &
-  timer_pid=$!
-  wait "$timer_pid" || exit 0
-  timer_pid=''
-  kill -KILL "$hook_pid" 2>/dev/null || true
-) &
-watchdog_pid=$!
-wait "$hook_pid" || status=$?
-hook_pid=''
-kill -TERM "$watchdog_pid" 2>/dev/null || true
-wait "$watchdog_pid" 2>/dev/null || true
-watchdog_pid=''
+"$release_root/bin/ccstatusline" --internal-supervise 2 \
+  "$release_root/bin/ccstatusline-hook" "$@" || status=$?
 case "$status" in
-  137|143) exit 0 ;;
+  124) exit 0 ;;
   *) exit "$status" ;;
 esac
 `;

@@ -314,15 +314,7 @@ output_file=$(${mktempPath} "$cache_dir/.output.XXXXXX") || {
   exit 0
 }
 cache_tmp=''
-renderer_pid=''
-watchdog_pid=''
 cleanup() {
-  if [ -n "$watchdog_pid" ]; then
-    kill -TERM "$watchdog_pid" 2>/dev/null || true
-  fi
-  if [ -n "$renderer_pid" ]; then
-    kill -KILL "$renderer_pid" 2>/dev/null || true
-  fi
   rm -f -- "$payload_file" "$output_file"
   if [ -n "$cache_tmp" ]; then
     rm -f -- "$cache_tmp"
@@ -345,36 +337,9 @@ if [ ! -s "$cache_file" ]; then
   duration=${shellQuote(coldTimeout)}
 fi
 status=0
-"$release_root/bin/ccstatusline-render" "$@" \
-  < "$payload_file" > "$output_file" &
-renderer_pid=$!
-(
-  timer_pid=''
-  stop_watchdog() {
-    if [ -n "$timer_pid" ]; then
-      kill -TERM "$timer_pid" 2>/dev/null || true
-      wait "$timer_pid" 2>/dev/null || true
-    fi
-    exit 0
-  }
-  trap stop_watchdog HUP INT TERM
-  sleep "$duration" &
-  timer_pid=$!
-  wait "$timer_pid" || exit 0
-  timer_pid=''
-  kill -TERM "$renderer_pid" 2>/dev/null || exit 0
-  sleep 0.1 &
-  timer_pid=$!
-  wait "$timer_pid" || exit 0
-  timer_pid=''
-  kill -KILL "$renderer_pid" 2>/dev/null || true
-) &
-watchdog_pid=$!
-wait "$renderer_pid" || status=$?
-renderer_pid=''
-kill -TERM "$watchdog_pid" 2>/dev/null || true
-wait "$watchdog_pid" 2>/dev/null || true
-watchdog_pid=''
+"$release_root/bin/ccstatusline" --internal-supervise "$duration" \
+  "$release_root/bin/ccstatusline-render" "$@" \
+  < "$payload_file" > "$output_file" || status=$?
 
 if [ "$status" -eq 0 ] && [ -s "$output_file" ]; then
   cat "$output_file"

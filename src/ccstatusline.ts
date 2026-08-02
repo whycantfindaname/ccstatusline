@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import chalk from 'chalk';
+import { spawn } from 'node:child_process';
 
 import { runTUI } from './tui';
 import type {
@@ -415,7 +416,92 @@ function handleGitChangeRefresh(): boolean {
     return true;
 }
 
+async function handleSupervisedCommand(): Promise<boolean> {
+    const flagIndex = process.argv.indexOf('--internal-supervise');
+    if (flagIndex === -1) {
+        return false;
+    }
+    const duration = process.argv[flagIndex + 1];
+    const command = process.argv[flagIndex + 2];
+    if (!duration || !command || !/^\d+(?:\.\d+)?$/.test(duration)) {
+        process.exitCode = 2;
+        return true;
+    }
+
+    const child = spawn(command, process.argv.slice(flagIndex + 3), {
+        detached: process.platform !== 'win32',
+        stdio: 'inherit',
+        windowsHide: true
+    });
+    const timeoutMs = Number(duration) * 1000;
+    await new Promise<void>((resolve) => {
+        let closed = false;
+        let finished = false;
+        let killPhase = false;
+        let timedOut = false;
+        let graceTimer: ReturnType<typeof setTimeout> | undefined;
+        const finish = (exitCode: number) => {
+            if (finished) {
+                return;
+            }
+            finished = true;
+            clearTimeout(deadlineTimer);
+            if (graceTimer) {
+                clearTimeout(graceTimer);
+            }
+            process.exitCode = exitCode;
+            resolve();
+        };
+        const signalTree = (signal: NodeJS.Signals) => {
+            if (!child.pid) {
+                return;
+            }
+            try {
+                if (process.platform === 'win32') {
+                    child.kill(signal);
+                } else {
+                    process.kill(-child.pid, signal);
+                }
+            } catch {
+                // The process group may have exited between observation and signal.
+            }
+        };
+        const deadlineTimer = setTimeout(() => {
+            timedOut = true;
+            signalTree('SIGTERM');
+            graceTimer = setTimeout(() => {
+                killPhase = true;
+                signalTree('SIGKILL');
+                if (closed) {
+                    finish(124);
+                }
+            }, 100);
+        }, timeoutMs);
+        child.once('error', () => {
+            closed = true;
+            if (!timedOut) {
+                finish(1);
+            } else if (killPhase) {
+                finish(124);
+            }
+        });
+        child.once('close', (code) => {
+            closed = true;
+            if (!timedOut) {
+                finish(code ?? 1);
+            } else if (killPhase) {
+                finish(124);
+            }
+        });
+    });
+    return true;
+}
+
 async function main() {
+    if (await handleSupervisedCommand()) {
+        return;
+    }
+
     // Detached cache refreshes re-enter this executable without reading stdin
     // or loading user settings. This mode intentionally emits no output.
     if (handleGitChangeRefresh() || handleGitReviewRefresh()) {

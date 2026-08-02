@@ -36,6 +36,12 @@ const MANAGED_PATCH_WITH_WIDGET_HOOKS = buildManagedPatch(
     ]
 );
 
+function writeSupervisorShim(releaseBin: string): void {
+    fs.writeFileSync(path.join(releaseBin, 'ccstatusline'), `#!/bin/sh
+exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve('src/ccstatusline.ts'))} "$@"
+`, { mode: 0o755 });
+}
+
 describe('portable deployment path resolution', () => {
     it('uses the Claude config directory regardless of repository checkout location', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-paths-'));
@@ -647,6 +653,7 @@ describe('last-known-good statusline dispatcher', () => {
             const cacheHome = path.join(home, 'cache');
             fs.mkdirSync(releaseBin, { recursive: true });
             fs.mkdirSync(home, { recursive: true });
+            writeSupervisorShim(releaseBin);
             const releaseId = 'a'.repeat(64);
             fs.renameSync(
                 path.join(targetRoot, 'releases', 'test-release'),
@@ -731,6 +738,65 @@ esac
         }
     });
 
+    it('terminates renderer descendants when the deadline expires', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-process-tree-'));
+        let childPid: number | null = null;
+        try {
+            const targetRoot = path.join(root, 'statusline');
+            const releaseId = 'c'.repeat(64);
+            const releaseBin = path.join(targetRoot, 'releases', releaseId, 'bin');
+            const home = path.join(root, 'home');
+            const childPidPath = path.join(root, 'child-pid');
+            fs.mkdirSync(releaseBin, { recursive: true });
+            fs.mkdirSync(home, { recursive: true });
+            fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
+            writeSupervisorShim(releaseBin);
+            fs.writeFileSync(path.join(releaseBin, 'ccstatusline-render'), `#!/bin/sh
+trap 'exit 0' TERM
+sleep 30 &
+printf '%s\\n' "$!" > ${JSON.stringify(childPidPath)}
+wait
+`, { mode: 0o755 });
+
+            const dispatcher = path.join(targetRoot, 'dispatcher');
+            fs.writeFileSync(dispatcher, buildStatuslineDispatcher({
+                targetRoot,
+                sedPath: '/usr/bin/sed',
+                sha256Path: '/usr/bin/sha256sum',
+                findPath: '/usr/bin/find',
+                mktempPath: '/usr/bin/mktemp',
+                warmTimeout: '0.1s',
+                coldTimeout: '0.1s'
+            }), { mode: 0o755 });
+
+            const result = spawnSync(dispatcher, [], {
+                encoding: 'utf8',
+                env: { ...process.env, HOME: home },
+                input: `${JSON.stringify({ session_id: 'tree-session' })}\n`
+            });
+            childPid = Number(fs.readFileSync(childPidPath, 'utf8').trim());
+            let childAlive = true;
+            try {
+                process.kill(childPid, 0);
+            } catch {
+                childAlive = false;
+            }
+
+            expect(result.status, result.stderr).toBe(0);
+            expect(result.stdout).toContain('Statusline refreshing');
+            expect(childAlive).toBe(false);
+        } finally {
+            if (childPid !== null) {
+                try {
+                    process.kill(childPid, 'SIGKILL');
+                } catch {
+                    // The expected path already terminated the process tree.
+                }
+            }
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('runs with a shasum-only toolset and no GNU timeout', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-macos-tools-'));
         try {
@@ -739,12 +805,11 @@ esac
             const releaseBin = path.join(targetRoot, 'releases', releaseId, 'bin');
             const home = path.join(root, 'home');
             const fakeShasum = path.join(root, 'shasum');
-            const fakeSleep = path.join(root, 'sleep');
             const hashArguments = path.join(root, 'shasum-arguments');
-            const sleepPidPath = path.join(root, 'sleep-pid');
             fs.mkdirSync(releaseBin, { recursive: true });
             fs.mkdirSync(home, { recursive: true });
             fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
+            writeSupervisorShim(releaseBin);
             fs.writeFileSync(path.join(releaseBin, 'ccstatusline-render'), `#!/bin/sh
 cat >/dev/null
 printf '%s\\n' 'LIVE-MACOS'
@@ -753,10 +818,6 @@ printf '%s\\n' 'LIVE-MACOS'
 printf '%s\\n' "$*" > ${JSON.stringify(hashArguments)}
 [ "$1" = '-a' ] && [ "$2" = '256' ] || exit 64
 exec /usr/bin/sha256sum
-`, { mode: 0o755 });
-            fs.writeFileSync(fakeSleep, `#!/bin/sh
-printf '%s\\n' "$$" > ${JSON.stringify(sleepPidPath)}
-exec /bin/sleep "$@"
 `, { mode: 0o755 });
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
@@ -773,19 +834,13 @@ exec /bin/sleep "$@"
 
             const result = spawnSync(dispatcher, [], {
                 encoding: 'utf8',
-                env: {
-                    ...process.env,
-                    HOME: home,
-                    PATH: `${root}:${process.env.PATH ?? ''}`
-                },
+                env: { ...process.env, HOME: home },
                 input: `${JSON.stringify({ session_id: 'macos-session' })}\n`
             });
 
             expect(result.status, result.stderr).toBe(0);
             expect(result.stdout).toBe('LIVE-MACOS\n');
             expect(fs.readFileSync(hashArguments, 'utf8').trim()).toBe('-a 256');
-            const sleepPid = Number(fs.readFileSync(sleepPidPath, 'utf8').trim());
-            expect(() => process.kill(sleepPid, 0)).toThrow();
             expect(fs.readFileSync(dispatcher, 'utf8')).not.toContain('missing-gnu-timeout');
             expect(fs.readFileSync(dispatcher, 'utf8')).not.toContain('--kill-after');
         } finally {
