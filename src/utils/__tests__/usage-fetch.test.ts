@@ -401,6 +401,7 @@ describe('fetchUsageData error handling', () => {
         }
     });
 
+    // This case launches nine Bun subprocesses; cold installs can exceed the default 5s timeout.
     it('preserves root errors within a process and keeps existing proxy and cache behavior', () => {
         const harness = createProbeHarness();
 
@@ -571,7 +572,7 @@ describe('fetchUsageData error handling', () => {
         } finally {
             harness.cleanup();
         }
-    });
+    }, 15_000);
 
     it('treats null API per-model buckets as zero usage', () => {
         const harness = createProbeHarness();

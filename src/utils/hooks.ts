@@ -77,7 +77,7 @@ function stripManagedHooks(hooks: Record<string, HookEntry[]>): void {
     }
 }
 
-function getActiveHookDefs(settings: Settings): WidgetHookDef[] {
+export function getActiveHookDefs(settings: Settings): WidgetHookDef[] {
     const seen = new Set<string>();
     const defs: WidgetHookDef[] = [];
     for (const line of settings.lines) {

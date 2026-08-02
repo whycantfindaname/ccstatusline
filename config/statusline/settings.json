@@ -39,6 +39,32 @@
           "narrowStart": "hidden",
           "shortLabel": "E"
         }
+      },
+      {
+        "id": "skill",
+        "type": "skills",
+        "color": "magenta",
+        "metadata": {
+          "mode": "current"
+        },
+        "responsive": {
+          "visibilityPriority": 55,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "version",
+        "type": "version",
+        "color": "brightBlack",
+        "responsive": {
+          "visibilityPriority": 30,
+          "variants": ["full", "short", "value-only", "hidden"],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "CC"
+        }
       }
     ],
     [
@@ -51,6 +77,28 @@
           "variants": ["full", "value-only", "hidden"],
           "mediumStart": "value-only",
           "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "worktree-mode",
+        "type": "worktree-mode",
+        "color": "yellow",
+        "responsive": {
+          "visibilityPriority": 62,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "worktree-name",
+        "type": "worktree-name",
+        "color": "yellow",
+        "responsive": {
+          "visibilityPriority": 60,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
         }
       },
       {
@@ -82,15 +130,45 @@
         }
       },
       {
-        "id": "version",
-        "type": "version",
-        "color": "brightBlack",
+        "id": "git-conflicts",
+        "type": "git-conflicts",
+        "color": "red",
+        "metadata": {
+          "hideNoGit": "true"
+        },
         "responsive": {
-          "visibilityPriority": 30,
-          "variants": ["full", "short", "value-only", "hidden"],
-          "mediumStart": "short",
-          "narrowStart": "hidden",
-          "shortLabel": "CC"
+          "visibilityPriority": 64,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-divergence",
+        "type": "git-ahead-behind",
+        "color": "brightMagenta",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 36,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-sha",
+        "type": "git-sha",
+        "color": "brightBlack",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 32,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
         }
       }
     ],
@@ -120,19 +198,102 @@
         }
       },
       {
-        "id": "cache-age",
-        "type": "prompt-cache-freshness",
-        "color": "brightBlack",
+        "id": "context-used",
+        "type": "context-percentage",
+        "color": "brightBlue",
         "responsive": {
-          "visibilityPriority": 28,
-          "variants": ["full", "short", "value-only", "hidden"],
-          "mediumStart": "short",
-          "narrowStart": "hidden",
-          "shortLabel": "Cache"
+          "visibilityPriority": 75,
+          "variants": ["full", "value-only"],
+          "mediumStart": "value-only",
+          "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "cache-hit",
+        "type": "cache-hit-rate",
+        "color": "green",
+        "metadata": {
+          "cacheScopeSession": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 52,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "cache-timer",
+        "type": "cache-timer",
+        "color": "brightCyan",
+        "responsive": {
+          "visibilityPriority": 50,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "compactions",
+        "type": "compaction-counter",
+        "color": "yellow",
+        "metadata": {
+          "showTriggers": "true",
+          "showReclaimed": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 45,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
         }
       }
     ],
     [
+      {
+        "id": "tokens-in",
+        "type": "tokens-input",
+        "color": "blue",
+        "responsive": {
+          "visibilityPriority": 82,
+          "variants": ["full"],
+          "mediumStart": "full",
+          "narrowStart": "full"
+        }
+      },
+      {
+        "id": "tokens-out",
+        "type": "tokens-output",
+        "color": "brightCyan",
+        "responsive": {
+          "visibilityPriority": 80,
+          "variants": ["full"],
+          "mediumStart": "full",
+          "narrowStart": "full"
+        }
+      },
+      {
+        "id": "tokens-cached",
+        "type": "tokens-cached",
+        "color": "cyan",
+        "responsive": {
+          "visibilityPriority": 42,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "tokens-total",
+        "type": "tokens-total",
+        "color": "brightBlue",
+        "responsive": {
+          "visibilityPriority": 40,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
       {
         "id": "agents",
         "type": "agent-activity",

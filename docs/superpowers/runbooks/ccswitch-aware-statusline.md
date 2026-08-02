@@ -4,9 +4,9 @@
 
 - Claude Code
 - Bun
-- Git and the standard `find`, `mktemp`, `sed`, `sha256sum`, and `timeout`
-  commands
-- CCSwitch when provider discovery is desired
+- Git and the standard `find`, `mktemp`, and `sed` commands
+- either `sha256sum` or the stock macOS `shasum` command
+- CCSwitch when provider discovery or managed common-config synchronization is desired
 
 The installer configures ccstatusline directly. It has no machine-bootstrap,
 restore-script, configuration-registry, or CCSwitch persistence dependency.
@@ -21,9 +21,11 @@ bun run deploy:local --check
 bun run deploy:local --apply
 ```
 
-The default `auto` mode tries read-only CCSwitch provider discovery. A missing,
-broken, or uninitialized CCSwitch installation produces a warning and continues
-with the bundled non-secret provider registry.
+The default `auto` mode tries CCSwitch provider discovery and, when available,
+synchronizes the installer-owned statusline fields in the Claude common-config
+snippet. A missing, broken, or uninitialized CCSwitch installation produces a
+warning and continues with the bundled non-secret provider registry and direct
+Claude settings installation.
 
 Use an explicit integration policy when needed:
 
@@ -82,7 +84,13 @@ The settings merge owns:
 - managed `SessionStart`, `SubagentStart`, `SubagentStop`, and `SessionEnd`
   command hooks
 
-Every unrelated settings field and hook entry is preserved.
+Before each state-changing write, the installer re-reads and field-merges the
+live Claude settings and optional CCSwitch common config. Unrelated fields and
+hook commands present in that final read are preserved. Both consumers expose
+whole-document writes without a conditional revision/CAS operation, so do not
+edit them concurrently with `--apply` or `--rollback`; an uncoordinated external
+write in the final read-to-write interval cannot be protected by this client.
+`--check` remains read-only.
 
 An identical rerun reports `no-op`. Generated releases, caches, backups, and
 Claude settings stay outside the Git repository.
@@ -125,7 +133,8 @@ bun run deploy:local --rollback \
 ```
 
 Rollback restores managed settings fields plus `active-release` and
-`previous-release`. Concurrent unrelated settings remain present.
+`previous-release`. Unrelated settings present in rollback's final live read
+remain present; use the same quiescent-writer rule as apply.
 
 ## Moving to another machine
 

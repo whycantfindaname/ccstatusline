@@ -2,8 +2,13 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { SettingsSchema } from '../src/types/Settings';
+import { getActiveHookDefs } from '../src/utils/hooks';
+import { getSkillsFilePath } from '../src/utils/skills';
 
 import {
     buildManagedPatch,
@@ -11,6 +16,7 @@ import {
     collectJsonDifferencePaths,
     mergeManagedSettings as mergeManagedSettingsPure,
     mergeProviderRegistries,
+    parseCCSwitchCommonConfig,
     parseProviderRegistry,
     restoreManagedSettings as restoreManagedSettingsPure,
     type JsonObject
@@ -30,6 +36,7 @@ export interface DeploymentPaths {
 interface BackupMetadata {
     activeRelease: string | null;
     createdAt: string;
+    hadCcSwitchCommon?: boolean;
     hadSettings: boolean;
     paths: Pick<DeploymentPaths, 'backupRoot' | 'settingsPath' | 'targetRoot'>;
     previousRelease: string | null;
@@ -49,17 +56,24 @@ interface ReleasePlan {
     releaseId: string;
 }
 
-interface DispatcherTools {
+export interface DispatcherTools {
     findPath: string;
     mktempPath: string;
     sedPath: string;
+    sha256Args: string[];
     sha256Path: string;
-    timeoutPath: string;
 }
 
 export interface ProviderResolution {
     registry: JsonObject;
     source: 'bundled' | 'ccswitch';
+    warning?: string;
+}
+
+export interface CCSwitchCommonResolution {
+    command: string | null;
+    current: JsonObject | null;
+    next: JsonObject | null;
     warning?: string;
 }
 
@@ -347,7 +361,10 @@ async function writeReleasePointer(filePath: string, releaseId: string | null): 
 }
 
 function managedPatch(paths: DeploymentPaths): JsonObject {
-    return buildManagedPatch(paths.targetRoot);
+    const settings = SettingsSchema.parse(readJson(
+        path.join(paths.repoRoot, 'config', 'statusline', 'settings.json')
+    ));
+    return buildManagedPatch(paths.targetRoot, getActiveHookDefs(settings));
 }
 
 function mergeManagedSettings(paths: DeploymentPaths, source: JsonObject): JsonObject {
@@ -378,13 +395,19 @@ exec "$release_root/bin/ccstatusline" --config "$release_root/config/settings.js
 `;
 }
 
-function resolveDispatcherTools(): DispatcherTools {
+export function resolveDispatcherTools(): DispatcherTools {
+    const sha256sumPath = commandPathOptional('sha256sum');
+    const shasumPath = sha256sumPath ? null : commandPathOptional('shasum');
+    const sha256Path = sha256sumPath ?? shasumPath;
+    if (!sha256Path) {
+        throw new Error('Required SHA-256 command is unavailable: sha256sum or shasum');
+    }
     return {
         findPath: commandPath('find'),
         mktempPath: commandPath('mktemp'),
         sedPath: commandPath('sed'),
-        sha256Path: commandPath('sha256sum'),
-        timeoutPath: commandPath('timeout')
+        sha256Args: sha256sumPath ? [] : ['-a', '256'],
+        sha256Path
     };
 }
 
@@ -402,7 +425,6 @@ function stableDispatcher(
     const activePath = shellQuote(activeReleasePath(paths));
     const releasePrefix = shellQuote(`${paths.targetRoot}/releases/`);
     const sedPath = shellQuote(tools.sedPath);
-    const timeoutPath = shellQuote(tools.timeoutPath);
     return `#!/bin/sh
 set -u
 release_id=$(${sedPath} -n '1p' ${activePath}) || exit 0
@@ -416,11 +438,52 @@ case "$release_root" in
   *) exit 0 ;;
 esac
 export CCSTATUSLINE_RELEASE_ROOT="$release_root"
+hook_pid=''
+watchdog_pid=''
+cleanup() {
+  if [ -n "$watchdog_pid" ]; then
+    kill -TERM "$watchdog_pid" 2>/dev/null || true
+  fi
+  if [ -n "$hook_pid" ]; then
+    kill -KILL "$hook_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
 status=0
-${timeoutPath} --kill-after=0.1s "2s" \
-  "$release_root/bin/ccstatusline-hook" "$@" || status=$?
+exec 3<&0
+"$release_root/bin/ccstatusline-hook" "$@" <&3 &
+hook_pid=$!
+exec 3<&-
+(
+  timer_pid=''
+  stop_watchdog() {
+    if [ -n "$timer_pid" ]; then
+      kill -TERM "$timer_pid" 2>/dev/null || true
+      wait "$timer_pid" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap stop_watchdog HUP INT TERM
+  sleep 2 &
+  timer_pid=$!
+  wait "$timer_pid" || exit 0
+  timer_pid=''
+  kill -TERM "$hook_pid" 2>/dev/null || exit 0
+  sleep 0.1 &
+  timer_pid=$!
+  wait "$timer_pid" || exit 0
+  timer_pid=''
+  kill -KILL "$hook_pid" 2>/dev/null || true
+) &
+watchdog_pid=$!
+wait "$hook_pid" || status=$?
+hook_pid=''
+kill -TERM "$watchdog_pid" 2>/dev/null || true
+wait "$watchdog_pid" 2>/dev/null || true
+watchdog_pid=''
 case "$status" in
-  124|137) exit 0 ;;
+  137|143) exit 0 ;;
   *) exit "$status" ;;
 esac
 `;
@@ -625,7 +688,10 @@ function timestampSlug(): string {
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
 }
 
-async function createBackup(paths: DeploymentPaths): Promise<string> {
+async function createBackup(
+    paths: DeploymentPaths,
+    ccSwitchCommon: CCSwitchCommonResolution
+): Promise<string> {
     const backupRoot = path.join(
         paths.backupRoot,
         `${timestampSlug()}-statusline-setup`
@@ -634,6 +700,7 @@ async function createBackup(paths: DeploymentPaths): Promise<string> {
     const metadata: BackupMetadata = {
         activeRelease: readReleasePointer(activeReleasePath(paths)),
         createdAt: new Date().toISOString(),
+        hadCcSwitchCommon: ccSwitchCommon.current !== null,
         hadSettings: fs.existsSync(paths.settingsPath),
         paths: {
             backupRoot: paths.backupRoot,
@@ -642,7 +709,7 @@ async function createBackup(paths: DeploymentPaths): Promise<string> {
         },
         previousRelease: readReleasePointer(previousReleasePath(paths)),
         retainUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        version: 4
+        version: 5
     };
     if (metadata.hadSettings) {
         await fs.promises.copyFile(
@@ -650,6 +717,12 @@ async function createBackup(paths: DeploymentPaths): Promise<string> {
             path.join(backupRoot, 'claude-settings.json')
         );
         await fs.promises.chmod(path.join(backupRoot, 'claude-settings.json'), 0o600);
+    }
+    if (ccSwitchCommon.current) {
+        await writeJsonAtomic(
+            path.join(backupRoot, 'cc-switch-common.json'),
+            ccSwitchCommon.current
+        );
     }
     await writeJsonAtomic(path.join(backupRoot, 'metadata.json'), metadata);
     return backupRoot;
@@ -666,14 +739,25 @@ function resolveBackupRoot(paths: DeploymentPaths, argument: string): string {
     return backupRoot;
 }
 
-async function restoreBackup(paths: DeploymentPaths, backupRoot: string): Promise<void> {
+async function restoreBackup(
+    paths: DeploymentPaths,
+    backupRoot: string,
+    ccSwitchCommand?: string | null
+): Promise<void> {
     const metadata = readJson(
         path.join(backupRoot, 'metadata.json')
     ) as unknown as BackupMetadata;
-    if (metadata.version !== 4
+    if (![4, 5].includes(metadata.version)
         || path.resolve(metadata.paths.settingsPath) !== path.resolve(paths.settingsPath)
         || path.resolve(metadata.paths.targetRoot) !== path.resolve(paths.targetRoot)) {
         throw new Error(`Backup does not belong to this deployment: ${backupRoot}`);
+    }
+
+    const restoreCCSwitchCommand = metadata.hadCcSwitchCommon
+        ? ccSwitchCommand ?? resolveCCSwitchCommand()
+        : null;
+    if (metadata.hadCcSwitchCommon && !restoreCCSwitchCommand) {
+        throw new Error('CCSwitch is required to restore this deployment backup');
     }
 
     if (metadata.hadSettings) {
@@ -688,6 +772,19 @@ async function restoreBackup(paths: DeploymentPaths, backupRoot: string): Promis
     }
     await writeReleasePointer(activeReleasePath(paths), metadata.activeRelease);
     await writeReleasePointer(previousReleasePath(paths), metadata.previousRelease);
+    if (metadata.hadCcSwitchCommon && restoreCCSwitchCommand) {
+        const backupCommon = readJson(path.join(backupRoot, 'cc-switch-common.json'));
+        const currentCommon = readCCSwitchCommon(restoreCCSwitchCommand);
+        const expected = restoreManagedSettings(paths, currentCommon, backupCommon);
+        writeCCSwitchCommon(restoreCCSwitchCommand, expected);
+        const actual = readCCSwitchCommon(restoreCCSwitchCommand);
+        const differences = collectJsonDifferencePaths(expected, actual);
+        if (differences.length > 0) {
+            throw new Error(
+                `Restored CCSwitch common config differed at ${differences.join(', ')}`
+            );
+        }
+    }
 }
 
 export function resolveProviderRegistry(
@@ -728,8 +825,7 @@ function loadProviderRegistry(
         path.join(paths.repoRoot, 'config', 'statusline', 'providers.json')
     );
     return resolveProviderRegistry(mode, baseline, () => {
-        const requestedCommand = process.env.CCSTATUSLINE_CCSWITCH_COMMAND ?? 'cc-switch';
-        const executable = commandPathOptional(requestedCommand);
+        const executable = resolveCCSwitchCommand();
         if (!executable) {
             throw new Error('cc-switch is unavailable');
         }
@@ -739,6 +835,121 @@ function loadProviderRegistry(
             { capture: true }
         );
     });
+}
+
+function resolveCCSwitchCommand(): string | null {
+    const requestedCommand = process.env.CCSTATUSLINE_CCSWITCH_COMMAND ?? 'cc-switch';
+    return commandPathOptional(requestedCommand);
+}
+
+function readCCSwitchCommon(command: string): JsonObject {
+    return parseCCSwitchCommonConfig(run(
+        command,
+        ['-a', 'claude', 'config', 'common', 'show'],
+        { capture: true }
+    ));
+}
+
+function resolveCCSwitchConfigRoot(command: string): string {
+    const output = run(command, ['config', 'path'], { capture: true });
+    const match = /^Config dir:\s+(.+)$/m.exec(output);
+    const configRoot = match?.[1]?.trim();
+    if (!configRoot || !path.isAbsolute(configRoot) || !fs.existsSync(configRoot)) {
+        throw new Error('CCSwitch config root could not be resolved safely');
+    }
+    return configRoot;
+}
+
+function writeCCSwitchCommon(command: string, commonConfig: JsonObject): void {
+    const configRoot = resolveCCSwitchConfigRoot(command);
+    const sandboxHome = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-ccswitch-home-'));
+    const commonConfigPath = path.join(sandboxHome, 'common-config.json');
+    try {
+        fs.writeFileSync(
+            commonConfigPath,
+            `${JSON.stringify(commonConfig)}\n`,
+            { encoding: 'utf8', mode: 0o600 }
+        );
+        run(
+            command,
+            [
+                '-a',
+                'claude',
+                'config',
+                'common',
+                'set',
+                '--file',
+                commonConfigPath
+            ],
+            {
+                capture: true,
+                env: commandEnvironment({
+                    CC_SWITCH_CONFIG_DIR: configRoot,
+                    CLAUDE_CONFIG_DIR: path.join(sandboxHome, '.claude'),
+                    HOME: sandboxHome,
+                    USERPROFILE: sandboxHome,
+                    XDG_CONFIG_HOME: path.join(sandboxHome, '.config')
+                })
+            }
+        );
+    } finally {
+        fs.rmSync(sandboxHome, { recursive: true, force: true });
+    }
+}
+
+function loadCCSwitchCommon(
+    paths: DeploymentPaths,
+    mode: CCSwitchMode,
+    providerSource: ProviderResolution['source']
+): CCSwitchCommonResolution {
+    if (mode === 'off' || providerSource !== 'ccswitch') {
+        return { command: null, current: null, next: null };
+    }
+
+    const command = resolveCCSwitchCommand();
+    try {
+        if (!command) {
+            throw new Error('cc-switch is unavailable');
+        }
+        const current = readCCSwitchCommon(command);
+        return {
+            command,
+            current,
+            next: mergeManagedSettings(paths, current)
+        };
+    } catch {
+        if (mode === 'required') {
+            throw new Error('CCSwitch common config is required and unavailable');
+        }
+        return {
+            command: null,
+            current: null,
+            next: null,
+            warning: 'CCSwitch common config unavailable; managed launch settings were not synchronized'
+        };
+    }
+}
+
+export function syncCCSwitchCommon(
+    paths: DeploymentPaths,
+    resolution: CCSwitchCommonResolution
+): void {
+    if (!resolution.command || !resolution.next) {
+        return;
+    }
+    const current = readCCSwitchCommon(resolution.command);
+    const next = mergeManagedSettings(paths, current);
+    if (semanticEqual(current, next)) {
+        return;
+    }
+    writeCCSwitchCommon(resolution.command, next);
+    const actual = readCCSwitchCommon(resolution.command);
+    const differences = collectJsonDifferencePaths(next, actual);
+    if (differences.length > 0) {
+        throw new Error(
+            `CCSwitch common config read-back differed at ${differences.join(', ')}`
+        );
+    }
 }
 
 function semanticEqual(left: unknown, right: unknown): boolean {
@@ -909,16 +1120,35 @@ function awaitableUnlink(filePath: string): void {
 
 function verifyHookSmoke(command: string, cwd: string): void {
     const sessionId = `ccstatusline-deployment-${process.pid}`;
-    for (const event of ['SessionStart', 'SessionEnd']) {
-        const result = spawnSync(command, [], {
-            cwd,
-            encoding: 'utf8',
-            env: commandEnvironment(),
-            input: `${JSON.stringify({ hook_event_name: event, session_id: sessionId })}\n`
-        });
-        if (result.status !== 0 || result.stdout !== '' || result.stderr !== '') {
-            throw new Error(`Lifecycle hook smoke failed for ${event}`);
+    const skillsFile = getSkillsFilePath(sessionId);
+    const events = [
+        { hook_event_name: 'SessionStart', session_id: sessionId },
+        {
+            hook_event_name: 'PreToolUse',
+            session_id: sessionId,
+            tool_input: { skill: 'deployment-smoke' },
+            tool_name: 'Skill'
+        },
+        { hook_event_name: 'SessionEnd', session_id: sessionId }
+    ];
+    try {
+        for (const event of events) {
+            const result = spawnSync(command, [], {
+                cwd,
+                encoding: 'utf8',
+                env: commandEnvironment(),
+                input: `${JSON.stringify(event)}\n`
+            });
+            if (result.status !== 0 || result.stdout !== '' || result.stderr !== '') {
+                throw new Error(`Managed hook smoke failed for ${event.hook_event_name}`);
+            }
         }
+        const skillsLog = fs.readFileSync(skillsFile, 'utf8');
+        if (!skillsLog.includes('"skill":"deployment-smoke"')) {
+            throw new Error('Managed hook smoke did not record the Skill invocation');
+        }
+    } finally {
+        awaitableUnlink(skillsFile);
     }
 }
 
@@ -950,6 +1180,14 @@ async function applyDeployment(options: CliOptions): Promise<void> {
     if (providerResolution.warning) {
         console.warn(providerResolution.warning);
     }
+    const ccSwitchCommon = loadCCSwitchCommon(
+        paths,
+        options.ccSwitchMode,
+        providerResolution.source
+    );
+    if (ccSwitchCommon.warning) {
+        console.warn(ccSwitchCommon.warning);
+    }
 
     run('bun', ['run', 'lint'], { cwd: paths.validationRoot, capture: true });
     run('bun', ['test'], { cwd: paths.validationRoot, capture: true });
@@ -967,14 +1205,18 @@ async function applyDeployment(options: CliOptions): Promise<void> {
     const noArtifactChange = releaseMatchesActive(paths, plan);
     const noConfigurationChange = semanticEqual(settings, nextSettings);
     const noInfrastructureChange = stableDispatchersMatch(paths, dispatcherTools);
-    if (noArtifactChange && noConfigurationChange && noInfrastructureChange) {
+    const noCCSwitchCommonChange = !ccSwitchCommon.current
+        || !ccSwitchCommon.next
+        || semanticEqual(ccSwitchCommon.current, ccSwitchCommon.next);
+    if (noArtifactChange && noConfigurationChange && noInfrastructureChange
+        && noCCSwitchCommonChange) {
         console.log(
             `no-op release=${plan.releaseId} ccswitch=${providerResolution.source}`
         );
         return;
     }
 
-    const backupRoot = await createBackup(paths);
+    const backupRoot = await createBackup(paths, ccSwitchCommon);
     try {
         const releasePath = await stageRelease(paths, plan);
         verifyStatuslineSmoke(
@@ -992,6 +1234,7 @@ async function applyDeployment(options: CliOptions): Promise<void> {
             readJsonOrEmpty(paths.settingsPath)
         );
         await writeJsonAtomic(paths.settingsPath, activationSettings);
+        syncCCSwitchCommon(paths, ccSwitchCommon);
         verifyApplied(paths, activationSettings, plan);
 
         verifyStatuslineSmoke(
@@ -1009,7 +1252,7 @@ async function applyDeployment(options: CliOptions): Promise<void> {
             + `ccswitch=${providerResolution.source}`
         );
     } catch (error) {
-        await restoreBackup(paths, backupRoot);
+        await restoreBackup(paths, backupRoot, ccSwitchCommon.command);
         throw error;
     }
 }
@@ -1018,6 +1261,11 @@ function printPlan(options: CliOptions): void {
     const paths = resolveDeploymentPaths();
     const dispatcherTools = preflight(paths);
     const providerResolution = loadProviderRegistry(paths, options.ccSwitchMode);
+    const ccSwitchCommon = loadCCSwitchCommon(
+        paths,
+        options.ccSwitchMode,
+        providerResolution.source
+    );
     const settings = readJsonOrEmpty(paths.settingsPath);
     const nextSettings = mergeManagedSettings(paths, settings);
     const changedSettingsKeys = Object.keys(nextSettings)
@@ -1025,6 +1273,12 @@ function printPlan(options: CliOptions): void {
     console.log(JSON.stringify({
         backupRoot: paths.backupRoot,
         ccSwitchMode: options.ccSwitchMode,
+        ccSwitchCommonChanged: Boolean(
+            ccSwitchCommon.current
+            && ccSwitchCommon.next
+            && !semanticEqual(ccSwitchCommon.current, ccSwitchCommon.next)
+        ),
+        ccSwitchCommonWarning: ccSwitchCommon.warning ?? null,
         ccSwitchSource: providerResolution.source,
         ccSwitchWarning: providerResolution.warning ?? null,
         changedSettingsKeys,
@@ -1086,7 +1340,7 @@ async function main(): Promise<void> {
     const paths = resolveDeploymentPaths();
     preflight(paths);
     const backupRoot = resolveBackupRoot(paths, options.backupPath ?? '');
-    await restoreBackup(paths, backupRoot);
+    await restoreBackup(paths, backupRoot, resolveCCSwitchCommand());
     console.log(`rolled-back backup=${backupRoot}`);
 }
 

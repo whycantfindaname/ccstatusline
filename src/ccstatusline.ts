@@ -341,6 +341,9 @@ async function handleActivityHook(): Promise<void> {
     if (!input) {
         return;
     }
+    // The managed deployment uses one stable hook dispatcher for both widget
+    // events and lifecycle activity. Each handler ignores events it does not own.
+    handleHookInput(input);
     try {
         const parsed = JSON.parse(input) as unknown;
         if (parsed && typeof parsed === 'object') {

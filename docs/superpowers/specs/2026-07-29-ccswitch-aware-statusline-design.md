@@ -1,14 +1,15 @@
 # Portable CCSwitch-aware ccstatusline design
 
 - **Date:** 2026-07-29
-- **Updated:** 2026-07-30
+- **Updated:** 2026-08-02
 - **Repository:** `sirmalloc/ccstatusline` fork
 
 ## 1. Purpose
 
 This fork installs one opinionated four-line ccstatusline preset for Claude Code.
 The installer owns ccstatusline artifacts and the statusline-related fields in
-Claude settings. CCSwitch is an optional provider-discovery integration.
+Claude settings. When CCSwitch is available, it owns the same fields in the
+Claude common-config snippet used to materialize managed launch settings.
 
 The same repository must deploy successfully on:
 
@@ -52,12 +53,13 @@ The repository owns:
 - lifecycle-hook activity state;
 - responsive rendering and last-known-good behavior;
 - a self-contained deployment and rollback CLI;
+- statusline fields in the optional CCSwitch Claude common-config consumer;
 - fixtures, tests, design notes, and the runbook.
 
 The repository does not own:
 
 - Claude authentication or account state;
-- CCSwitch databases, common settings, or recovery snapshots;
+- CCSwitch provider records, credentials, unrelated common settings, or recovery snapshots;
 - machine bootstrap and restore scripts;
 - host-specific configuration registries;
 - provider credentials or raw provider configuration.
@@ -96,9 +98,9 @@ Deployment supports three modes:
 
 | Mode | Behavior |
 |---|---|
-| `auto` | Try the public `cc-switch` provider-list command. Use the bundled registry and continue when discovery is unavailable or invalid. |
-| `off` | Use the bundled non-secret provider registry without invoking CCSwitch. |
-| `required` | Require successful provider discovery before validation or state changes. |
+| `auto` | Discover public provider metadata and, when available, synchronize the managed statusline fields in the Claude common-config snippet. Use the bundled registry and continue when CCSwitch is unavailable. |
+| `off` | Use the bundled non-secret provider registry and leave the CCSwitch common-config consumer untouched. |
+| `required` | Require successful provider discovery and common-config read/write access before state changes. |
 
 The default mode is `auto`. It may be selected with
 `--ccswitch=auto|off|required` or `CCSTATUSLINE_CCSWITCH_MODE`.
@@ -108,11 +110,16 @@ origins, and hostnames. URL userinfo, path, query, fragment, headers, tokens,
 and raw provider records are discarded. Discovered entries are merged with the
 bundled registry.
 
-The installer never writes CCSwitch configuration. At render time provider
-identity is resolved from the statusline subprocess environment, so a Claude
-session launched through CCSwitch still reflects its inherited route. Without
-CCSwitch, the same resolver uses the bundled registry, a sanitized endpoint
-hostname, or `Claude Official`.
+The installer reads and writes CCSwitch only through its public `config common`
+CLI. Immediately before a write, it re-reads the live common config and applies
+the same field-level merge used for Claude settings. Provider records,
+credentials, unrelated common fields, and unrelated hooks present in that final
+read—including additions made after planning—are preserved. The merged JSON is
+stored in a mode-`0600` file inside a disposable `HOME` and passed with
+`config common set --file`; the complete common config is never placed in
+process arguments. The CLI keeps the existing `CC_SWITCH_CONFIG_DIR`, isolating
+its optional live-config refresh from the Claude settings authority. At render
+time provider identity is resolved from the statusline subprocess environment.
 
 ## 6. Runtime identity and activity
 
@@ -180,7 +187,10 @@ rename. This avoids filesystem-specific symlink replacement behavior.
 
 Stable dispatchers read `active-release` once, validate the ID and release-root
 containment, then execute one immutable release. A single refresh therefore
-uses one coherent version of the executable and configuration.
+uses one coherent version of the executable and configuration. Preflight uses
+`sha256sum` when available and otherwise uses the stock macOS
+`shasum -a 256`. Renderer and hook budgets use a POSIX `/bin/sh` watchdog, not
+GNU `timeout` or `timeout --kill-after`.
 
 ## 8. Settings transaction
 
@@ -202,33 +212,47 @@ The managed Claude settings patch contains:
     "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}],
     "SubagentStart": [{"matcher": "", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}],
     "SubagentStop": [{"matcher": "", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}],
-    "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}]
+    "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}],
+    "PreToolUse": [{"matcher": "Skill", "hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "<install-root>/bin/ccstatusline-hook", "timeout": 2}]}]
   }
 }
 ```
 
-The merge replaces `statusLine` and `subagentStatusLine`, removes earlier
-managed hook commands, and preserves all unrelated settings and hook entries.
-Legacy `ccswitch-statusline-hook` entries are recognized as managed during
-migration.
+The merge is applied to both the Claude settings authority and, when enabled,
+the CCSwitch Claude common-config snippet. It replaces `statusLine` and
+`subagentStatusLine`, removes earlier managed hook commands, and preserves all
+unrelated settings and hook entries. Legacy `ccswitch-statusline` and
+`ccswitch-statusline-hook` commands are recognized as managed during migration.
+
+Both consumers expose whole-document writes without a conditional revision/CAS
+operation. Apply and rollback therefore re-read immediately before each merge
+and preserve unrelated values present in that final read. State-changing
+commands require a quiescent external-writer window: this client does not claim
+to preserve an uncoordinated write that lands after the final read but before
+the whole-document write. `--check` and `--dry-run` remain read-only.
 
 Apply order:
 
 1. resolve paths and optional provider discovery;
 2. run lint, tests, distribution build, and local-runtime build;
 3. compute the semantic plan and return early for an exact no-op;
-4. create a mode-`0700` backup with mode-`0600` settings content;
+4. create a mode-`0700` backup with mode-`0600` Claude settings and optional
+   CCSwitch common-config content;
 5. stage and validate the complete immutable release;
 6. smoke the release wrapper and approved four-line output;
 7. atomically install stable dispatchers;
 8. write `previous-release`, then atomically publish `active-release`;
 9. re-read and field-merge the Claude settings authority;
-10. read back settings, pointer, manifest, stable rendering, cache, and hooks;
-11. restore managed settings and release pointers from the backup after a failed
-    state-changing step.
+10. synchronize and read back the optional CCSwitch common-config consumer;
+11. read back settings, pointer, manifest, stable rendering, cache, and hooks;
+12. restore managed Claude settings, managed CCSwitch common-config fields, and
+    release pointers from the backup after a failed state-changing step.
 
-Backups record creation time and a seven-day `retainUntil`. Rollback restores
-only managed settings and pointers, preserving concurrent unrelated settings.
+Backups record creation time and a seven-day `retainUntil`. Rollback field-merges
+the final live read of Claude settings and CCSwitch common config with the
+backed-up managed fields, preserving unrelated fields and hooks present in that
+read in both consumers.
 
 ## 9. Responsive and reliability requirements
 
@@ -282,7 +306,8 @@ its first state change. A successful identical rerun reports `no-op`.
    mode using bundled provider data.
 3. Broken or uninitialized CCSwitch produces a concise auto-mode warning and a
    successful core deployment.
-4. `required` mode fails before any state change when discovery is unavailable.
+4. `required` mode fails before any state change when discovery or common-config
+   access is unavailable.
 5. Claude settings retain unrelated fields and contain only current managed
    command paths.
 6. A symlinked settings path is patched through its canonical authority without
@@ -294,10 +319,12 @@ its first state change. A successful identical rerun reports `no-op`.
    tests.
 9. Every dispatcher execution returns a current frame, an exact-session cached
    frame, or an explicit refresh frame.
-10. A cold Git snapshot renders unknown, a slow worktree refreshes outside the
+10. A CCSwitch provider export contains the same stable statusline commands and
+    managed hooks as the Claude settings authority.
+11. A cold Git snapshot renders unknown, a slow worktree refreshes outside the
     foreground budget, and the next render shows the measured counts; timeout,
     stale-cache, single-flight, atomic-write, and linked-worktree tests pass.
-11. Source, fixtures, generated repository configuration, commit metadata, and
+12. Source, fixtures, generated repository configuration, commit metadata, and
     documentation contain no credentials, personal paths, runtime databases, or
     private machine identifiers.
 

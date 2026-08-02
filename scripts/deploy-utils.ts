@@ -1,5 +1,10 @@
 export type JsonObject = Record<string, unknown>;
 
+export interface ManagedActivityHook {
+    event: string;
+    matcher?: string;
+}
+
 function isJsonObject(value: unknown): value is JsonObject {
     return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -33,17 +38,58 @@ export function collectJsonDifferencePaths(
     return [currentPath];
 }
 
-export function buildManagedPatch(targetRoot: string): JsonObject {
+export function parseCCSwitchCommonConfig(output: string): JsonObject {
+    const jsonStart = output.indexOf('{');
+    if (jsonStart < 0) {
+        throw new Error('CCSwitch common config output did not contain a JSON object');
+    }
+    const parsed = JSON.parse(output.slice(jsonStart)) as unknown;
+    if (!isJsonObject(parsed)) {
+        throw new Error('CCSwitch common config output was not a JSON object');
+    }
+    return parsed;
+}
+
+export function buildManagedPatch(
+    targetRoot: string,
+    activityHooks: ManagedActivityHook[] = []
+): JsonObject {
     const statuslineCommand = `${targetRoot}/bin/ccstatusline`;
     const hookCommand = `${targetRoot}/bin/ccstatusline-hook`;
-    const hook = {
-        matcher: '',
-        hooks: [{
-            type: 'command',
-            command: hookCommand,
-            timeout: 2
-        }]
-    };
+    const hooks: JsonObject = {};
+    const seen = new Set<string>();
+    const hookDefs: ManagedActivityHook[] = [
+        { event: 'SessionStart', matcher: '' },
+        { event: 'SubagentStart', matcher: '' },
+        { event: 'SubagentStop', matcher: '' },
+        { event: 'SessionEnd', matcher: '' },
+        ...activityHooks
+    ];
+
+    for (const hookDef of hookDefs) {
+        const key = `${hookDef.event}:${hookDef.matcher ?? ''}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const hook: JsonObject = {
+            hooks: [{
+                type: 'command',
+                command: hookCommand,
+                timeout: 2
+            }]
+        };
+        if (hookDef.matcher !== undefined) {
+            hook.matcher = hookDef.matcher;
+        }
+        const eventHooks = hooks[hookDef.event] as JsonObject[] | undefined;
+        if (eventHooks) {
+            eventHooks.push(hook);
+        } else {
+            hooks[hookDef.event] = [hook];
+        }
+    }
+
     return {
         statusLine: {
             type: 'command',
@@ -55,33 +101,32 @@ export function buildManagedPatch(targetRoot: string): JsonObject {
             type: 'command',
             command: `${statuslineCommand} --subagent`
         },
-        hooks: {
-            SessionStart: [hook],
-            SubagentStart: [hook],
-            SubagentStop: [hook],
-            SessionEnd: [hook]
-        }
+        hooks
     };
 }
 
-function isManagedHookEntry(value: unknown): boolean {
-    if (!value || typeof value !== 'object') {
+function isManagedHookCommand(value: unknown): boolean {
+    if (!isJsonObject(value) || typeof value.command !== 'string') {
         return false;
     }
-    const hooks = (value as JsonObject).hooks;
-    if (!Array.isArray(hooks)) {
-        return false;
+    const token = /^(?:"([^"]+)"|'([^']+)'|(\S+))/.exec(value.command.trim());
+    const executable = token?.[1] ?? token?.[2] ?? token?.[3];
+    const basename = executable?.replace(/\\/g, '/').split('/').pop();
+    return basename === 'ccstatusline-hook' || basename === 'ccswitch-statusline-hook';
+}
+
+function filterHookEntry(value: unknown, managed: boolean): unknown {
+    if (!isJsonObject(value) || !Array.isArray(value.hooks)) {
+        return managed ? null : value;
     }
-    return hooks.some((hook) => {
-        if (!hook || typeof hook !== 'object') {
-            return false;
-        }
-        const command = (hook as JsonObject).command;
-        return typeof command === 'string'
-            && (
-                command.includes('/ccstatusline-hook')
-                || command.includes('/ccswitch-statusline-hook')
-            );
+    const hooks = value.hooks.filter(hook => isManagedHookCommand(hook) === managed);
+    return hooks.length > 0 ? { ...value, hooks } : null;
+}
+
+function filterHookEntries(entries: unknown[], managed: boolean): unknown[] {
+    return entries.flatMap((entry) => {
+        const filtered = filterHookEntry(entry, managed);
+        return filtered === null ? [] : [filtered];
     });
 }
 
@@ -90,17 +135,28 @@ export function mergeManagedSettings(source: JsonObject, patch: JsonObject): Jso
         ? source.hooks as JsonObject
         : {};
     const patchHooks = patch.hooks as JsonObject;
-    const mergedHooks: JsonObject = { ...sourceHooks };
+    const mergedHooks: JsonObject = {};
+
+    for (const [event, entries] of Object.entries(sourceHooks)) {
+        if (!Array.isArray(entries)) {
+            mergedHooks[event] = entries;
+            continue;
+        }
+        const unmanagedEntries = filterHookEntries(entries, false);
+        if (unmanagedEntries.length > 0) {
+            mergedHooks[event] = unmanagedEntries;
+        }
+    }
 
     for (const [event, managedValue] of Object.entries(patchHooks)) {
-        const existing: unknown[] = Array.isArray(sourceHooks[event])
-            ? Array.from(sourceHooks[event])
+        const existing: unknown[] = Array.isArray(mergedHooks[event])
+            ? Array.from(mergedHooks[event])
             : [];
         const managedEntries: unknown[] = Array.isArray(managedValue)
             ? Array.from(managedValue)
             : [];
         mergedHooks[event] = [
-            ...existing.filter(entry => !isManagedHookEntry(entry)),
+            ...existing,
             ...managedEntries
         ];
     }
@@ -121,18 +177,27 @@ export function restoreManagedSettings(
     const currentHooks = isJsonObject(current.hooks) ? current.hooks : {};
     const backupHooks = isJsonObject(backup.hooks) ? backup.hooks : {};
     const patchHooks = isJsonObject(patch.hooks) ? patch.hooks : {};
-    const restoredHooks: JsonObject = { ...currentHooks };
+    const restoredHooks: JsonObject = {};
+    const hookEvents = new Set([
+        ...Object.keys(currentHooks),
+        ...Object.keys(backupHooks),
+        ...Object.keys(patchHooks)
+    ]);
 
-    for (const event of Object.keys(patchHooks)) {
+    for (const event of hookEvents) {
         const currentEntries: unknown[] = Array.isArray(currentHooks[event])
             ? Array.from(currentHooks[event] as unknown[])
             : [];
         const backupEntries: unknown[] = Array.isArray(backupHooks[event])
             ? Array.from(backupHooks[event] as unknown[])
             : [];
-        const restoredEntries = [
-            ...currentEntries.filter(entry => !isManagedHookEntry(entry)),
-            ...backupEntries.filter(isManagedHookEntry)
+        if (!Array.isArray(currentHooks[event]) && currentHooks[event] !== undefined) {
+            restoredHooks[event] = currentHooks[event];
+            continue;
+        }
+        const restoredEntries: unknown[] = [
+            ...filterHookEntries(currentEntries, false),
+            ...filterHookEntries(backupEntries, true)
         ];
         if (restoredEntries.length > 0) {
             restoredHooks[event] = restoredEntries;
@@ -163,9 +228,9 @@ export interface StatuslineDispatcherOptions {
     findPath: string;
     mktempPath: string;
     sedPath: string;
+    sha256Args?: readonly string[];
     sha256Path: string;
     targetRoot: string;
-    timeoutPath: string;
     warmTimeout?: string;
 }
 
@@ -174,10 +239,11 @@ function shellQuote(value: string): string {
 }
 
 function checkedDuration(value: string, name: string): string {
-    if (!/^(?:\d+(?:\.\d+)?)s$/.test(value)) {
+    const match = /^(\d+(?:\.\d+)?)s$/.exec(value);
+    if (!match) {
         throw new Error(`${name} must be a timeout duration in seconds`);
     }
-    return value;
+    return value.slice(0, -1);
 }
 
 export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions): string {
@@ -185,9 +251,10 @@ export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions):
     const warmTimeout = checkedDuration(options.warmTimeout ?? '1s', 'warmTimeout');
     const activeReleasePath = shellQuote(`${options.targetRoot}/active-release`);
     const releasePrefix = shellQuote(`${options.targetRoot}/releases/`);
-    const timeoutPath = shellQuote(options.timeoutPath);
     const sedPath = shellQuote(options.sedPath);
-    const sha256Path = shellQuote(options.sha256Path);
+    const sha256Command = [options.sha256Path, ...(options.sha256Args ?? [])]
+        .map(shellQuote)
+        .join(' ');
     const findPath = shellQuote(options.findPath);
     const mktempPath = shellQuote(options.mktempPath);
 
@@ -247,20 +314,29 @@ output_file=$(${mktempPath} "$cache_dir/.output.XXXXXX") || {
   exit 0
 }
 cache_tmp=''
+renderer_pid=''
+watchdog_pid=''
 cleanup() {
+  if [ -n "$watchdog_pid" ]; then
+    kill -TERM "$watchdog_pid" 2>/dev/null || true
+  fi
+  if [ -n "$renderer_pid" ]; then
+    kill -KILL "$renderer_pid" 2>/dev/null || true
+  fi
   rm -f -- "$payload_file" "$output_file"
   if [ -n "$cache_tmp" ]; then
     rm -f -- "$cache_tmp"
   fi
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
 cat > "$payload_file" || exit 0
 
 session_id=$(${sedPath} -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\\([A-Za-z0-9._-]*\\)".*/\\1/p' "$payload_file")
 case "$session_id" in
   ''|*[!A-Za-z0-9._-]*) session_id="parent-\${PPID:-unknown}" ;;
 esac
-session_key=$(printf '%s|%s' "$session_id" "$*" | ${sha256Path})
+session_key=$(printf '%s|%s' "$session_id" "$*" | ${sha256Command})
 session_key=\${session_key%% *}
 cache_file="$cache_dir/$session_key.ansi"
 
@@ -269,9 +345,36 @@ if [ ! -s "$cache_file" ]; then
   duration=${shellQuote(coldTimeout)}
 fi
 status=0
-${timeoutPath} --kill-after=0.1s "$duration" \
-  "$release_root/bin/ccstatusline-render" "$@" \
-  < "$payload_file" > "$output_file" || status=$?
+"$release_root/bin/ccstatusline-render" "$@" \
+  < "$payload_file" > "$output_file" &
+renderer_pid=$!
+(
+  timer_pid=''
+  stop_watchdog() {
+    if [ -n "$timer_pid" ]; then
+      kill -TERM "$timer_pid" 2>/dev/null || true
+      wait "$timer_pid" 2>/dev/null || true
+    fi
+    exit 0
+  }
+  trap stop_watchdog HUP INT TERM
+  sleep "$duration" &
+  timer_pid=$!
+  wait "$timer_pid" || exit 0
+  timer_pid=''
+  kill -TERM "$renderer_pid" 2>/dev/null || exit 0
+  sleep 0.1 &
+  timer_pid=$!
+  wait "$timer_pid" || exit 0
+  timer_pid=''
+  kill -KILL "$renderer_pid" 2>/dev/null || true
+) &
+watchdog_pid=$!
+wait "$renderer_pid" || status=$?
+renderer_pid=''
+kill -TERM "$watchdog_pid" 2>/dev/null || true
+wait "$watchdog_pid" 2>/dev/null || true
+watchdog_pid=''
 
 if [ "$status" -eq 0 ] && [ -s "$output_file" ]; then
   cat "$output_file"
