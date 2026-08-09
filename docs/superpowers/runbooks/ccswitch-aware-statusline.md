@@ -138,17 +138,21 @@ remain present; use the same quiescent-writer rule as apply.
 
 ## Moving to another machine
 
+Clone the published portability branch and build on the destination machine:
+
 ```bash
-git clone --branch <published-branch> <fork-url>
+git clone --branch codex/portable-ccstatusline \
+  https://github.com/whycantfindaname/ccstatusline.git
 cd ccstatusline
 bun install
 bun run deploy:local --check
 bun run deploy:local --apply
 ```
 
-This transfers source, the preset, and deployment logic. Claude credentials,
-provider secrets, runtime databases, caches, and machine-specific paths remain
-local to each machine.
+This transfers source, the preset, and deployment logic. The destination builds
+its own native runtime, so do not copy a compiled Linux release directory to
+macOS. Claude credentials, provider secrets, runtime databases, caches, and
+machine-specific paths remain local to each machine.
 
 ## Troubleshooting
 

@@ -1,6 +1,7 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides shared repository guidance to coding agents. `CLAUDE.md` is a
+symlink to this file; edit `AGENTS.md` rather than maintaining two copies.
 
 ## Project Overview
 
@@ -38,6 +39,27 @@ bun run lint      # Runs TypeScript type checking and ESLint without modifying f
 # Apply ESLint auto-fixes intentionally
 bun run lint:fix
 ```
+
+## Portable Deployment
+
+The fork-specific deployment authority is
+`docs/superpowers/specs/2026-07-29-ccswitch-aware-statusline-design.md`; operator
+steps are in `docs/superpowers/runbooks/ccswitch-aware-statusline.md`.
+
+```bash
+# Read-only validation
+bun run deploy:local --check
+
+# State-changing installation, only when explicitly requested
+bun run deploy:local --apply
+```
+
+`--apply` and `--rollback` modify the resolved Claude settings authority and may
+synchronize CCSwitch common config. Do not run either command without an
+explicit user request. Releases, backups, and runtime caches are generated
+outside the repository. Cross-machine recovery transfers source plus deployment
+logic and builds a native release on the destination; do not copy a compiled
+Linux release to macOS.
 
 ## Architecture
 
@@ -138,14 +160,11 @@ Default to using Bun instead of Node.js:
   1. `bun build`: Bundles src/ccstatusline.ts into dist/ccstatusline.js targeting Node.js 14+
   2. `postbuild`: Runs scripts/replace-version.ts to replace `__PACKAGE_VERSION__` placeholder with actual version from package.json
 - **ESLint configuration**: Uses flat config format (eslint.config.js) with TypeScript and React plugins
-- **Dependencies**: All runtime dependencies are bundled using `--packages=external` for npm package
+- **Build output**: `bun run build` creates the Node.js 14-compatible distribution bundle; `bun run build:local-runtime` compiles the current platform's deployment runtime
 - **Type checking and linting**: Run checks via `bun run lint` and use `bun run lint:fix` only when you intentionally want ESLint auto-fixes. Never use `npx eslint`, `eslint`, `tsx`, `bun tsc`, or any other variation directly
 - **Lint rules**: Never disable a lint rule via a comment, no matter how benign the lint warning or error may seem
-- **Testing**: Uses Vitest (via Bun) with 6 test files and ~40 test cases covering:
-  - Model context detection and token calculation (src/utils/__tests__/model-context.test.ts)
-  - Context percentage calculations (src/utils/__tests__/context-percentage.test.ts)
-  - JSONL transcript parsing (src/utils/__tests__/jsonl.test.ts)
-  - Widget rendering (src/widgets/__tests__/*.test.ts)
-  - Run tests with `bun test` or `bun test --watch` for watch mode
-  - Test configuration: vitest.config.ts
-  - Manual testing also available via piped input and TUI interaction
+- **Testing**: Uses Bun's test runner across TUI, configuration, transcript, renderer, widget, Git/cache, hook, and deployment behavior
+  - Run the full suite with `bun test` or `bun test --watch`
+  - Run deployment coverage with `bun test ./scripts/__tests__/deploy-local.test.ts`
+  - Test configuration: `vitest.config.ts`
+  - Manual testing is also available via piped input and TUI interaction
