@@ -8,20 +8,15 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY_ROOT = path.resolve(SCRIPT_DIR, '..');
 
 function gitApply(
-    repositoryRoot: string,
+    inkRoot: string,
     patchPath: string,
     arguments_: string[]
 ): ReturnType<typeof spawnSync> {
     return spawnSync(
         'git',
-        [
-            'apply',
-            ...arguments_,
-            '--directory=node_modules/ink',
-            patchPath
-        ],
+        ['apply', ...arguments_, patchPath],
         {
-            cwd: repositoryRoot,
+            cwd: inkRoot,
             encoding: 'utf8',
             stdio: ['ignore', 'pipe', 'pipe']
         }
@@ -39,31 +34,26 @@ export function applyInstallPatches(
     repositoryRoot = REPOSITORY_ROOT,
     patchPath = path.join(repositoryRoot, 'patches', 'ink@6.2.0.patch')
 ): 'applied' | 'present' {
-    const target = path.join(
-        repositoryRoot,
-        'node_modules',
-        'ink',
-        'build',
-        'parse-keypress.js'
-    );
+    const inkRoot = fs.realpathSync(path.join(repositoryRoot, 'node_modules', 'ink'));
+    const target = path.join(inkRoot, 'build', 'parse-keypress.js');
     if (!fs.statSync(target).isFile()) {
         throw new Error(`Ink patch target is not a regular file: ${target}`);
     }
 
-    const forward = gitApply(repositoryRoot, patchPath, ['--check']);
+    const forward = gitApply(inkRoot, patchPath, ['--check']);
     if (forward.status === 0) {
-        const applied = gitApply(repositoryRoot, patchPath, []);
+        const applied = gitApply(inkRoot, patchPath, []);
         if (applied.status !== 0) {
             throw new Error(`Ink patch apply failed: ${diagnostic(applied)}`);
         }
-        const verified = gitApply(repositoryRoot, patchPath, ['--reverse', '--check']);
+        const verified = gitApply(inkRoot, patchPath, ['--reverse', '--check']);
         if (verified.status !== 0) {
             throw new Error(`Ink patch verification failed: ${diagnostic(verified)}`);
         }
         return 'applied';
     }
 
-    const reverse = gitApply(repositoryRoot, patchPath, ['--reverse', '--check']);
+    const reverse = gitApply(inkRoot, patchPath, ['--reverse', '--check']);
     if (reverse.status === 0) {
         return 'present';
     }

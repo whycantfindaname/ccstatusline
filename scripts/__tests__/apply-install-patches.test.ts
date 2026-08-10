@@ -73,4 +73,16 @@ describe('install patch', () => {
             'matches neither the expected source nor patched state'
         );
     });
+
+    it('applies through a symlinked node_modules directory', () => {
+        const packageRoot = fixture(ORIGINAL);
+        const checkout = fs.mkdtempSync(
+            path.join(os.tmpdir(), 'ccstatusline-patch-checkout-')
+        );
+        temporaryRoots.push(checkout);
+        fs.symlinkSync(path.join(packageRoot, 'node_modules'), path.join(checkout, 'node_modules'));
+
+        expect(applyInstallPatches(checkout, PATCH)).toBe('applied');
+        expect(applyInstallPatches(checkout, PATCH)).toBe('present');
+    });
 });
