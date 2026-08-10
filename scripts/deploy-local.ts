@@ -1149,7 +1149,10 @@ async function applyDeployment(options: CliOptions): Promise<void> {
     }
 
     run('bun', ['run', 'lint'], { cwd: paths.validationRoot, capture: true });
-    run('bun', ['test'], { cwd: paths.validationRoot, capture: true });
+    run('bun', ['test', '--timeout=7000'], {
+        cwd: paths.validationRoot,
+        capture: true
+    });
     run('bun', ['run', 'build'], { cwd: paths.validationRoot, capture: true });
     run(
         'bun',
@@ -1248,7 +1251,7 @@ function printPlan(options: CliOptions): void {
         targetRoot: paths.targetRoot,
         validation: [
             'bun run lint',
-            'bun test',
+            'bun test --timeout=7000',
             'bun run build',
             'bun run build:local-runtime'
         ],

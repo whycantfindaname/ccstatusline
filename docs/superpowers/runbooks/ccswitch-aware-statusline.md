@@ -68,7 +68,7 @@ Apply runs:
 
 ```text
 bun run lint
-bun test
+bun test --timeout=7000
 bun run build
 bun run build:local-runtime
 ```

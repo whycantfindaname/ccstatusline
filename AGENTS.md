@@ -154,7 +154,7 @@ Default to using Bun instead of Node.js:
 - **ink@6.2.0 patch**: The project uses a patch for ink@6.2.0 to fix backspace key handling on macOS
   - Issue: ink treats `\x7f` (backspace on macOS) as delete key instead of backspace
   - Fix: Patches `build/parse-keypress.js` to correctly map `\x7f` to backspace
-  - Applied automatically during `bun install` via `patchedDependencies` in package.json
+  - Applied idempotently during `bun install` by `scripts/apply-install-patches.ts`; this avoids Bun 1.3.14's `patchedDependencies` `EINVAL` failure
   - Patch file: `patches/ink@6.2.0.patch`
 - **Build process**: Two-step build using `bun run build`
   1. `bun build`: Bundles src/ccstatusline.ts into dist/ccstatusline.js targeting Node.js 14+
@@ -165,6 +165,7 @@ Default to using Bun instead of Node.js:
 - **Lint rules**: Never disable a lint rule via a comment, no matter how benign the lint warning or error may seem
 - **Testing**: Uses Bun's test runner across TUI, configuration, transcript, renderer, widget, Git/cache, hook, and deployment behavior
   - Run the full suite with `bun test` or `bun test --watch`
-  - Run deployment coverage with `bun test ./scripts/__tests__/deploy-local.test.ts`
+  - Deployment validation uses `bun test --timeout=7000` because process-tree deadline fixtures intentionally approach Bun's default five-second limit
+  - Run deployment coverage with `bun test --timeout=7000 ./scripts/__tests__/deploy-local.test.ts`
   - Test configuration: `vitest.config.ts`
   - Manual testing is also available via piped input and TUI interaction
