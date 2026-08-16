@@ -250,7 +250,7 @@ export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions):
     const coldTimeout = checkedDuration(options.coldTimeout ?? '4s', 'coldTimeout');
     const warmTimeout = checkedDuration(options.warmTimeout ?? '1s', 'warmTimeout');
     const activeReleasePath = shellQuote(`${options.targetRoot}/active-release`);
-    const releasePrefix = shellQuote(`${options.targetRoot}/releases/`);
+    const releasesPath = shellQuote(`${options.targetRoot}/releases`);
     const sedPath = shellQuote(options.sedPath);
     const sha256Command = [options.sha256Path, ...(options.sha256Args ?? [])]
         .map(shellQuote)
@@ -275,12 +275,16 @@ if [ "\${#release_id}" -ne 64 ]; then
   printf '%s\\n' 'Statusline refreshing; invalid release pointer'
   exit 0
 fi
-release_root=$(CDPATH= cd -- ${releasePrefix}"$release_id" && pwd -P) || {
+releases_root=$(CDPATH= cd -- ${releasesPath} && pwd -P) || {
+  printf '%s\\n' 'Statusline refreshing; release directory unavailable'
+  exit 0
+}
+release_root=$(CDPATH= cd -- "$releases_root/$release_id" && pwd -P) || {
   printf '%s\\n' 'Statusline refreshing; release unavailable'
   exit 0
 }
 case "$release_root" in
-  ${releasePrefix}*) ;;
+  "$releases_root"/*) ;;
   *)
     printf '%s\\n' 'Statusline refreshing; invalid release'
     exit 0

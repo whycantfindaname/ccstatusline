@@ -81,8 +81,11 @@ describe('portable deployment path resolution', () => {
             expect(paths.configuredSettingsPath).toBe(
                 path.join(runtimeRoot, 'settings.json')
             );
-            expect(paths.settingsPath).toBe(path.join(persistentRoot, 'settings.json'));
-            expect(paths.targetRoot).toBe(path.join(persistentRoot, 'statusline'));
+            const canonicalPersistentRoot = fs.realpathSync(persistentRoot);
+            expect(paths.settingsPath).toBe(
+                path.join(canonicalPersistentRoot, 'settings.json')
+            );
+            expect(paths.targetRoot).toBe(path.join(canonicalPersistentRoot, 'statusline'));
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -666,7 +669,7 @@ describe('last-known-good statusline dispatcher', () => {
             fs.writeFileSync(renderer, `#!/bin/sh
 payload=$(cat)
 case "$payload" in
-  *'"mode":"slow"'*) sleep 1; printf '%s\\n' 'LATE' ;;
+  *'"mode":"slow"'*) sleep 2; printf '%s\\n' 'LATE' ;;
   *'"mode":"error"'*) exit 42 ;;
   *'"label":"B"'*) printf '%s\\n' 'LIVE-B' ;;
   *) printf '%s\\n' 'LIVE-A' ;;
@@ -674,14 +677,16 @@ esac
 `, { mode: 0o755 });
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
+            const dispatcherTools = resolveDispatcherTools();
             fs.writeFileSync(dispatcher, buildStatuslineDispatcher({
                 targetRoot,
                 sedPath: '/usr/bin/sed',
-                sha256Path: '/usr/bin/sha256sum',
+                sha256Path: dispatcherTools.sha256Path,
+                sha256Args: dispatcherTools.sha256Args,
                 findPath: '/usr/bin/find',
                 mktempPath: '/usr/bin/mktemp',
-                warmTimeout: '0.05s',
-                coldTimeout: '0.2s'
+                warmTimeout: '0.25s',
+                coldTimeout: '1s'
             }), { mode: 0o755 });
 
             const run = (sessionId: string, mode: string, label = 'A', args: string[] = []) => {
@@ -759,14 +764,16 @@ wait
 `, { mode: 0o755 });
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
+            const dispatcherTools = resolveDispatcherTools();
             fs.writeFileSync(dispatcher, buildStatuslineDispatcher({
                 targetRoot,
                 sedPath: '/usr/bin/sed',
-                sha256Path: '/usr/bin/sha256sum',
+                sha256Path: dispatcherTools.sha256Path,
+                sha256Args: dispatcherTools.sha256Args,
                 findPath: '/usr/bin/find',
                 mktempPath: '/usr/bin/mktemp',
-                warmTimeout: '0.1s',
-                coldTimeout: '0.1s'
+                warmTimeout: '0.5s',
+                coldTimeout: '1s'
             }), { mode: 0o755 });
 
             const result = spawnSync(dispatcher, [], {
@@ -806,6 +813,7 @@ wait
             const home = path.join(root, 'home');
             const fakeShasum = path.join(root, 'shasum');
             const hashArguments = path.join(root, 'shasum-arguments');
+            const nativeHashTools = resolveDispatcherTools();
             fs.mkdirSync(releaseBin, { recursive: true });
             fs.mkdirSync(home, { recursive: true });
             fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
@@ -817,7 +825,7 @@ printf '%s\\n' 'LIVE-MACOS'
             fs.writeFileSync(fakeShasum, `#!/bin/sh
 printf '%s\\n' "$*" > ${JSON.stringify(hashArguments)}
 [ "$1" = '-a' ] && [ "$2" = '256' ] || exit 64
-exec /usr/bin/sha256sum
+exec ${JSON.stringify(nativeHashTools.sha256Path)} ${nativeHashTools.sha256Args.map(argument => JSON.stringify(argument)).join(' ')} "$3"
 `, { mode: 0o755 });
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
