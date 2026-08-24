@@ -31,7 +31,7 @@ This repository is a portable fork of `sirmalloc/ccstatusline`:
 
 - fork: `whycantfindaname/ccstatusline`;
 - upstream: `sirmalloc/ccstatusline`;
-- portable maintenance branch: `codex/portable-ccstatusline`.
+- portable maintenance branch: `lwj_dev`.
 
 When comparing this fork with upstream, inspect fresh Git refs; remote names
 alone do not establish branch parity.
@@ -322,7 +322,7 @@ target path and rollback contract.
 2. Keep the upstream delta reviewable. For an upstream update, fetch the
    selected upstream ref (for example, `git fetch origin main`), inspect the
    change against the fork base, integrate it into
-   `codex/portable-ccstatusline` only after preserving the portable
+   `lwj_dev` only after preserving the portable
    deployment/provider-display delta, and rerun lint, tests, builds, and the
    read-only deployment check before activation. Fetch, merge, and push are
    separate maintenance actions; editing source does not imply any of them.
