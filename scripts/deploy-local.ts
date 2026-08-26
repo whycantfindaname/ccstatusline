@@ -220,6 +220,19 @@ async function writeFileAtomic(filePath: string, content: string, mode: number):
     }
 }
 
+async function copyFileAtomic(source: string, target: string, mode: number): Promise<void> {
+    await fs.promises.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
+    const tempPath = `${target}.${process.pid}.${Date.now()}.tmp`;
+    try {
+        await fs.promises.copyFile(source, tempPath);
+        await fs.promises.chmod(tempPath, mode);
+        await fs.promises.rename(tempPath, target);
+    } catch (error) {
+        await fs.promises.unlink(tempPath).catch(() => undefined);
+        throw error;
+    }
+}
+
 async function writeJsonAtomic(filePath: string, value: unknown): Promise<void> {
     await writeFileAtomic(filePath, `${JSON.stringify(value, null, 2)}\n`, 0o600);
 }
@@ -411,7 +424,7 @@ export function resolveDispatcherTools(): DispatcherTools {
     };
 }
 
-function stableDispatcher(
+export function stableDispatcher(
     paths: DeploymentPaths,
     tools: DispatcherTools,
     hook: boolean
@@ -427,20 +440,33 @@ function stableDispatcher(
     const sedPath = shellQuote(tools.sedPath);
     return `#!/bin/sh
 set -u
+[ -n "\${HOME:-}" ] || exit 0
+runtime_root="\${JASON_CCSTATUSLINE_RUNTIME_ROOT:-\${HOME}/.local/share/ccstatusline}"
+case "$runtime_root" in
+  /*) ;;
+  *) exit 0 ;;
+esac
 release_id=$(${sedPath} -n '1p' ${activePath}) || exit 0
 case "$release_id" in
   ''|*[!0-9a-f]*) exit 0 ;;
 esac
 [ "\${#release_id}" -eq 64 ] || exit 0
+[ -f "$runtime_root/.active-key" ] || exit 0
+active_key=$(${sedPath} -n '1p' "$runtime_root/.active-key") || exit 0
+[ "$active_key" = "$release_id" ] || exit 0
+runtime_binary="$runtime_root/versions/$release_id/ccstatusline"
+[ -x "$runtime_binary" ] || exit 0
 release_root=$(CDPATH= cd -- ${releasePrefix}"$release_id" && pwd -P) || exit 0
 case "$release_root" in
   ${releasePrefix}*) ;;
   *) exit 0 ;;
 esac
-export CCSTATUSLINE_RELEASE_ROOT="$release_root"
+config_path="$release_root/config/settings.json"
+[ -f "$config_path" ] || exit 0
+export CCSTATUSLINE_CONFIG_DIR="$release_root/config"
 status=0
-"$release_root/bin/ccstatusline" --internal-supervise 2 \
-  "$release_root/bin/ccstatusline-hook" "$@" || status=$?
+"$runtime_binary" --internal-supervise 2 \
+  "$runtime_binary" --config "$config_path" --activity-hook "$@" || status=$?
 case "$status" in
   124) exit 0 ;;
   *) exit "$status" ;;
@@ -643,6 +669,52 @@ function stableDispatchersMatch(
     });
 }
 
+export async function projectActiveRuntime(
+    runtimeRoot: string,
+    activeReleaseFile: string
+): Promise<string> {
+    if (!path.isAbsolute(runtimeRoot)) {
+        throw new Error('ccstatusline runtime root must be absolute');
+    }
+    const releaseId = readReleasePointer(activeReleaseFile);
+    if (!releaseId) {
+        throw new Error(`Active release pointer is missing: ${activeReleaseFile}`);
+    }
+    const source = path.join(
+        path.dirname(activeReleaseFile),
+        'releases',
+        releaseId,
+        'bin',
+        'ccstatusline'
+    );
+    const versionRoot = path.join(runtimeRoot, 'versions', releaseId);
+    const target = path.join(versionRoot, 'ccstatusline');
+    await fs.promises.mkdir(versionRoot, { recursive: true, mode: 0o700 });
+    await fs.promises.chmod(versionRoot, 0o700);
+    await copyFileAtomic(source, target, 0o700);
+    await writeFileAtomic(
+        path.join(runtimeRoot, '.active-key'),
+        `${releaseId}\n`,
+        0o600
+    );
+    return target;
+}
+
+function resolveRuntimeRoot(): string {
+    const configured = process.env.JASON_CCSTATUSLINE_RUNTIME_ROOT;
+    if (configured) {
+        if (!path.isAbsolute(configured)) {
+            throw new Error('JASON_CCSTATUSLINE_RUNTIME_ROOT must be absolute');
+        }
+        return configured;
+    }
+    const home = process.env.HOME;
+    if (!home) {
+        throw new Error('HOME is required for ccstatusline runtime projection');
+    }
+    return path.join(home, '.local', 'share', 'ccstatusline');
+}
+
 function timestampSlug(): string {
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
 }
@@ -731,6 +803,12 @@ async function restoreBackup(
     }
     await writeReleasePointer(activeReleasePath(paths), metadata.activeRelease);
     await writeReleasePointer(previousReleasePath(paths), metadata.previousRelease);
+    if (metadata.activeRelease) {
+        await projectActiveRuntime(
+            resolveRuntimeRoot(),
+            activeReleasePath(paths)
+        );
+    }
     if (metadata.hadCcSwitchCommon && restoreCCSwitchCommand) {
         const backupCommon = readJson(path.join(backupRoot, 'cc-switch-common.json'));
         const currentCommon = readCCSwitchCommon(restoreCCSwitchCommand);
@@ -1190,6 +1268,10 @@ async function applyDeployment(options: CliOptions): Promise<void> {
         const oldActive = readReleasePointer(activeReleasePath(paths));
         await writeReleasePointer(previousReleasePath(paths), oldActive);
         await writeReleasePointer(activeReleasePath(paths), plan.releaseId);
+        await projectActiveRuntime(
+            resolveRuntimeRoot(),
+            activeReleasePath(paths)
+        );
 
         const activationSettings = mergeManagedSettings(
             paths,

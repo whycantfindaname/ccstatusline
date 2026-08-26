@@ -185,10 +185,14 @@ identical apply a no-op.
 stored as ordinary files. Publication uses sibling temporary files and atomic
 rename. This avoids filesystem-specific symlink replacement behavior.
 
-Stable dispatchers read `active-release` once, validate the ID and release-root
-containment, then execute one immutable release. A single refresh therefore
-uses one coherent version of the executable and configuration. Preflight uses
-`sha256sum` when available and otherwise uses the stock macOS
+Stable dispatchers read `active-release` once and validate the ID and
+release-root containment. The main statusline executes the immutable release
+binary directly. The hook additionally requires a matching executable projection
+under `${JASON_CCSTATUSLINE_RUNTIME_ROOT:-$HOME/.local/share/ccstatusline}` and
+uses that HOME binary for both its supervisor and activity-hook child while
+reading configuration from the immutable release. Missing or mismatched hook
+projection state exits silently without falling back to the release binary.
+Preflight uses `sha256sum` when available and otherwise uses the stock macOS
 `shasum -a 256`. Renderer and hook budgets use the bundled runtime's detached
 process-group supervisor, not GNU `timeout` or `timeout --kill-after`; deadline
 termination covers the renderer or hook and all of its descendants.
@@ -244,11 +248,14 @@ Apply order:
 6. smoke the release wrapper and approved four-line output;
 7. atomically install stable dispatchers;
 8. write `previous-release`, then atomically publish `active-release`;
-9. re-read and field-merge the Claude settings authority;
-10. synchronize and read back the optional CCSwitch common-config consumer;
-11. read back settings, pointer, manifest, stable rendering, cache, and hooks;
-12. restore managed Claude settings, managed CCSwitch common-config fields, and
-    release pointers from the backup after a failed state-changing step.
+9. atomically project the active native binary to the HOME runtime and publish
+   its matching `.active-key`;
+10. re-read and field-merge the Claude settings authority;
+11. synchronize and read back the optional CCSwitch common-config consumer;
+12. read back settings, pointer, manifest, stable rendering, cache, and hooks;
+13. restore managed Claude settings, managed CCSwitch common-config fields, and
+    release pointers from the backup after a failed state-changing step, then
+    reproject the restored active release to HOME.
 
 Backups record creation time and a seven-day `retainUntil`. Rollback field-merges
 the final live read of Claude settings and CCSwitch common config with the
@@ -314,7 +321,9 @@ its first state change. A successful identical rerun reports `no-op`.
 6. A symlinked settings path is patched through its canonical authority without
    replacing the runtime symlink.
 7. An apply publishes and validates one immutable release through
-   `active-release`; rollback restores the recorded prior pointer.
+   `active-release`, projects the same native binary to the HOME runtime, and
+   validates the stable hook without a release-binary fallback; rollback restores
+   and reprojects the recorded prior release.
 8. The four-line layout, colors, provider/model/effort, context, tools, session,
    cost, auto-compaction, and full absolute cwd behavior pass focused and golden
    tests.

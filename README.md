@@ -318,9 +318,12 @@ bun run deploy:local --apply
 ```
 
 It installs beside `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/settings.json`, follows
-that file when it is a symlink, and preserves unrelated Claude settings.
-CCSwitch provider discovery is optional: default `auto` mode falls back to the
-bundled provider registry when CCSwitch is absent or unavailable.
+that file when it is a symlink, and preserves unrelated Claude settings. The
+active native binary is also projected under `$HOME/.local/share/ccstatusline`
+so lifecycle hooks avoid repeatedly launching the compiled runtime from a slow
+persistent filesystem. CCSwitch provider discovery is optional: default `auto`
+mode falls back to the bundled provider registry when CCSwitch is absent or
+unavailable.
 
 ```bash
 # Skip CCSwitch discovery

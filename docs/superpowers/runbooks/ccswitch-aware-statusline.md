@@ -74,8 +74,11 @@ bun run build:local-runtime
 ```
 
 It then creates a seven-day backup, stages one immutable release, validates
-hashes and the four-line render, atomically publishes `active-release`,
-field-merges Claude settings, and runs the stable main and hook commands.
+hashes and the four-line render, atomically publishes `active-release`, projects
+the active native binary to `${JASON_CCSTATUSLINE_RUNTIME_ROOT:-$HOME/.local/share/ccstatusline}`,
+field-merges Claude settings, and runs the stable main and hook commands. The
+stable hook executes both its supervisor and activity-hook child from that HOME
+projection while reading configuration from the immutable release.
 
 The settings merge owns:
 
@@ -133,8 +136,9 @@ bun run deploy:local --rollback \
 ```
 
 Rollback restores managed settings fields plus `active-release` and
-`previous-release`. Unrelated settings present in rollback's final live read
-remain present; use the same quiescent-writer rule as apply.
+`previous-release`, then reprojects the restored active binary to HOME before
+returning. Unrelated settings present in rollback's final live read remain
+present; use the same quiescent-writer rule as apply.
 
 ## Moving to another machine
 

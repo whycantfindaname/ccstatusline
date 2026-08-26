@@ -10,9 +10,11 @@ import {
 } from 'vitest';
 
 import {
+    projectActiveRuntime,
     resolveDeploymentPaths,
     resolveDispatcherTools,
     resolveProviderRegistry,
+    stableDispatcher,
     syncCCSwitchCommon
 } from '../deploy-local';
 import {
@@ -439,11 +441,28 @@ if (args[0] === 'config' && args[1] === 'path') {
             const ccSwitchRoot = path.join(root, 'ccswitch');
             const commonStatePath = path.join(ccSwitchRoot, 'common.json');
             const fakeCCSwitch = path.join(root, 'cc-switch');
+            const previousActive = 'a'.repeat(64);
+            const currentActive = 'b'.repeat(64);
+            const runtimeRoot = path.join(home, '.local', 'share', 'ccstatusline');
+            const previousBinary = path.join(
+                installRoot,
+                'releases',
+                previousActive,
+                'bin',
+                'ccstatusline'
+            );
             fs.mkdirSync(backupRoot, { recursive: true });
             fs.mkdirSync(ccSwitchRoot, { recursive: true });
             fs.mkdirSync(configRoot, { recursive: true });
+            fs.mkdirSync(path.dirname(previousBinary), { recursive: true });
+            fs.mkdirSync(runtimeRoot, { recursive: true });
             fs.writeFileSync(settingsPath, '{}\n');
             fs.writeFileSync(path.join(backupRoot, 'claude-settings.json'), '{}\n');
+            fs.writeFileSync(previousBinary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            fs.writeFileSync(
+                path.join(runtimeRoot, '.active-key'),
+                `${currentActive}\n`
+            );
 
             const oldPatch = buildManagedPatch('/old/statusline');
             const backupCommon = mergeManagedSettings({
@@ -468,7 +487,7 @@ if (args[0] === 'config' && args[1] === 'path') {
             fs.writeFileSync(
                 path.join(backupRoot, 'metadata.json'),
                 `${JSON.stringify({
-                    activeRelease: null,
+                    activeRelease: previousActive,
                     createdAt: '2026-08-02T00:00:00.000Z',
                     hadCcSwitchCommon: true,
                     hadSettings: true,
@@ -530,6 +549,16 @@ if (args[0] === 'config' && args[1] === 'path') {
             expect(restored.subagentStatusLine).toEqual(backupCommon.subagentStatusLine);
             expect(JSON.stringify(hooks.Stop)).toContain('/concurrent/stop.sh');
             expect(JSON.stringify(hooks.SessionStart)).toContain('/old/statusline');
+            expect(fs.readFileSync(
+                path.join(runtimeRoot, '.active-key'),
+                'utf8'
+            )).toBe(`${previousActive}\n`);
+            expect(fs.readFileSync(path.join(
+                runtimeRoot,
+                'versions',
+                previousActive,
+                'ccstatusline'
+            ), 'utf8')).toBe('#!/bin/sh\nexit 0\n');
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -865,5 +894,237 @@ exec ${JSON.stringify(nativeHashTools.sha256Path)} ${nativeHashTools.sha256Args.
             mktempPath: '/usr/bin/mktemp',
             warmTimeout: '1s; false'
         })).toThrow('warmTimeout must be a timeout duration');
+    });
+});
+
+describe('HOME projected hook dispatcher', () => {
+    const tools = {
+        findPath: '/usr/bin/find',
+        mktempPath: '/usr/bin/mktemp',
+        sedPath: '/usr/bin/sed',
+        sha256Args: [],
+        sha256Path: '/usr/bin/sha256sum'
+    };
+
+    function createFixture(): {
+        dispatcher: string;
+        home: string;
+        releaseId: string;
+        root: string;
+        runtimeRoot: string;
+        targetRoot: string;
+    } {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-hook-dispatcher-'));
+        const home = path.join(root, 'home');
+        const runtimeRoot = path.join(home, '.local', 'share', 'ccstatusline');
+        const targetRoot = path.join(root, 'statusline');
+        const releaseId = 'd'.repeat(64);
+        const releaseRoot = path.join(targetRoot, 'releases', releaseId);
+        const dispatcher = path.join(root, 'ccstatusline-hook');
+        fs.mkdirSync(path.join(releaseRoot, 'config'), { recursive: true });
+        fs.mkdirSync(home, { recursive: true });
+        fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
+        fs.writeFileSync(path.join(releaseRoot, 'config', 'settings.json'), '{}\n');
+        fs.writeFileSync(dispatcher, stableDispatcher({
+            backupRoot: path.join(root, 'backup'),
+            configuredSettingsPath: path.join(root, 'settings.json'),
+            repoRoot: root,
+            settingsPath: path.join(root, 'settings.json'),
+            targetRoot,
+            validationRoot: root
+        }, tools, true), { mode: 0o755 });
+        return { dispatcher, home, releaseId, root, runtimeRoot, targetRoot };
+    }
+
+    function runHook(
+        dispatcher: string,
+        home: string,
+        runtimeRoot?: string
+    ): ReturnType<typeof spawnSync> {
+        return spawnSync(dispatcher, [], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                HOME: home,
+                ...(runtimeRoot === undefined
+                    ? {}
+                    : { JASON_CCSTATUSLINE_RUNTIME_ROOT: runtimeRoot })
+            },
+            input: '{"hook_event_name":"UserPromptSubmit","session_id":"test"}\n'
+        });
+    }
+
+    it('projects the active release without machine-specific infrastructure', async () => {
+        const fixture = createFixture();
+        try {
+            const sourceBinary = path.join(
+                fixture.targetRoot,
+                'releases',
+                fixture.releaseId,
+                'bin',
+                'ccstatusline'
+            );
+            fs.mkdirSync(path.dirname(sourceBinary), { recursive: true });
+            fs.writeFileSync(sourceBinary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+
+            const projected = await projectActiveRuntime(
+                fixture.runtimeRoot,
+                path.join(fixture.targetRoot, 'active-release')
+            );
+
+            expect(projected).toBe(path.join(
+                fixture.runtimeRoot,
+                'versions',
+                fixture.releaseId,
+                'ccstatusline'
+            ));
+            expect(fs.readFileSync(projected, 'utf8')).toBe('#!/bin/sh\nexit 0\n');
+            expect(fs.statSync(projected).mode & 0o777).toBe(0o700);
+            expect(fs.readFileSync(
+                path.join(fixture.runtimeRoot, '.active-key'),
+                'utf8'
+            )).toBe(`${fixture.releaseId}\n`);
+        } finally {
+            fs.rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses the HOME binary for both supervisor and activity hook', () => {
+        const fixture = createFixture();
+        try {
+            const versionRoot = path.join(
+                fixture.runtimeRoot,
+                'versions',
+                fixture.releaseId
+            );
+            const binary = path.join(versionRoot, 'ccstatusline');
+            const invocations = path.join(fixture.root, 'invocations');
+            fs.mkdirSync(versionRoot, { recursive: true });
+            fs.writeFileSync(
+                path.join(fixture.runtimeRoot, '.active-key'),
+                `${fixture.releaseId}\n`
+            );
+            fs.writeFileSync(binary, `#!/bin/sh
+printf '%s\\n' "$*" >> ${JSON.stringify(invocations)}
+if [ "$1" = '--internal-supervise' ]; then
+  shift 2
+  exec "$@"
+fi
+exit 0
+`, { mode: 0o755 });
+
+            const result = runHook(
+                fixture.dispatcher,
+                fixture.home,
+                fixture.runtimeRoot
+            );
+            const calls = fs.readFileSync(invocations, 'utf8').trim().split('\n');
+
+            expect(result.status, String(result.stderr)).toBe(0);
+            expect(result.stdout).toBe('');
+            expect(calls).toHaveLength(2);
+            expect(calls[0]).toContain(`--internal-supervise 2 ${binary}`);
+            expect(calls[1]).toContain(
+                `--config ${path.join(
+                    fixture.targetRoot,
+                    'releases',
+                    fixture.releaseId,
+                    'config',
+                    'settings.json'
+                )} --activity-hook`
+            );
+        } finally {
+            fs.rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('fails open without falling back to the CubeFS binary', () => {
+        const scenarios: {
+            name: string;
+            setup: (fixture: ReturnType<typeof createFixture>) => {
+                home?: string;
+                runtimeRoot?: string;
+            };
+        }[] = [
+            { name: 'missing HOME', setup: () => ({ home: '' }) },
+            { name: 'relative runtime root', setup: () => ({ runtimeRoot: 'relative' }) },
+            { name: 'missing active key', setup: () => ({}) },
+            {
+                name: 'mismatched active key',
+                setup: (fixture: ReturnType<typeof createFixture>) => {
+                    fs.mkdirSync(fixture.runtimeRoot, { recursive: true });
+                    fs.writeFileSync(
+                        path.join(fixture.runtimeRoot, '.active-key'),
+                        `${'e'.repeat(64)}\n`
+                    );
+                    return {};
+                }
+            },
+            {
+                name: 'missing projected binary',
+                setup: (fixture: ReturnType<typeof createFixture>) => {
+                    fs.mkdirSync(fixture.runtimeRoot, { recursive: true });
+                    fs.writeFileSync(
+                        path.join(fixture.runtimeRoot, '.active-key'),
+                        `${fixture.releaseId}\n`
+                    );
+                    return {};
+                }
+            },
+            {
+                name: 'non-executable projected binary',
+                setup: (fixture: ReturnType<typeof createFixture>) => {
+                    const versionRoot = path.join(
+                        fixture.runtimeRoot,
+                        'versions',
+                        fixture.releaseId
+                    );
+                    fs.mkdirSync(versionRoot, { recursive: true });
+                    fs.writeFileSync(
+                        path.join(fixture.runtimeRoot, '.active-key'),
+                        `${fixture.releaseId}\n`
+                    );
+                    fs.writeFileSync(
+                        path.join(versionRoot, 'ccstatusline'),
+                        '#!/bin/sh\nexit 99\n',
+                        { mode: 0o644 }
+                    );
+                    return {};
+                }
+            }
+        ];
+
+        for (const scenario of scenarios) {
+            const fixture = createFixture();
+            try {
+                const fallbackStamp = path.join(fixture.root, 'cube-fallback');
+                const releaseBinary = path.join(
+                    fixture.targetRoot,
+                    'releases',
+                    fixture.releaseId,
+                    'bin',
+                    'ccstatusline'
+                );
+                fs.mkdirSync(path.dirname(releaseBinary), { recursive: true });
+                fs.writeFileSync(
+                    releaseBinary,
+                    `#!/bin/sh\ntouch ${JSON.stringify(fallbackStamp)}\n`,
+                    { mode: 0o755 }
+                );
+                const overrides = scenario.setup(fixture);
+                const result = runHook(
+                    fixture.dispatcher,
+                    overrides.home ?? fixture.home,
+                    overrides.runtimeRoot ?? fixture.runtimeRoot
+                );
+
+                expect(result.status, `${scenario.name}: ${result.stderr}`).toBe(0);
+                expect(result.stdout, scenario.name).toBe('');
+                expect(result.stderr, scenario.name).toBe('');
+                expect(fs.existsSync(fallbackStamp), scenario.name).toBe(false);
+            } finally {
+                fs.rmSync(fixture.root, { recursive: true, force: true });
+            }
+        }
     });
 });
