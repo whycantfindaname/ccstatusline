@@ -1,0 +1,346 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "model",
+        "type": "model",
+        "color": "ansi256:117",
+        "responsive": {
+          "visibilityPriority": 99,
+          "variants": [
+            "full",
+            "short",
+            "value-only"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "M",
+          "allowValueTruncate": true
+        }
+      },
+      {
+        "id": "skill",
+        "type": "skills",
+        "color": "ansi256:213",
+        "metadata": {
+          "mode": "current"
+        },
+        "responsive": {
+          "visibilityPriority": 55,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "version",
+        "type": "version",
+        "color": "ansi256:246",
+        "responsive": {
+          "visibilityPriority": 30,
+          "variants": [
+            "full",
+            "short",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "Q"
+        }
+      },
+      {
+        "id": "session-name",
+        "type": "session-name",
+        "color": "ansi256:220",
+        "responsive": {
+          "visibilityPriority": 45,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden",
+          "allowValueTruncate": true
+        }
+      }
+    ],
+    [
+      {
+        "id": "project",
+        "type": "current-working-dir",
+        "color": "ansi256:33",
+        "responsive": {
+          "visibilityPriority": 70,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "worktree-mode",
+        "type": "worktree-mode",
+        "color": "ansi256:220",
+        "responsive": {
+          "visibilityPriority": 62,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "worktree-name",
+        "type": "worktree-name",
+        "color": "ansi256:220",
+        "responsive": {
+          "visibilityPriority": 60,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-branch",
+        "type": "git-branch",
+        "color": "ansi256:213",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 68,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-changes",
+        "type": "git-changes",
+        "color": "ansi256:220",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 66,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-conflicts",
+        "type": "git-conflicts",
+        "color": "ansi256:196",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 64,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-divergence",
+        "type": "git-ahead-behind",
+        "color": "ansi256:213",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 36,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-sha",
+        "type": "git-sha",
+        "color": "ansi256:246",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 32,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "git-review",
+        "type": "git-review",
+        "color": "ansi256:82",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 58,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      }
+    ],
+    [
+      {
+        "id": "full-context",
+        "type": "full-context-window",
+        "color": "ansi256:33",
+        "responsive": {
+          "visibilityPriority": 90,
+          "variants": [
+            "full",
+            "short",
+            "value-only"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "Ctx"
+        }
+      },
+      {
+        "id": "context-used",
+        "type": "context-percentage",
+        "color": "ansi256:117",
+        "responsive": {
+          "visibilityPriority": 75,
+          "variants": [
+            "full",
+            "value-only"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "context-bar",
+        "type": "context-bar",
+        "color": "ansi256:33",
+        "responsive": {
+          "visibilityPriority": 72,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "hidden",
+          "narrowStart": "hidden"
+        }
+      }
+    ],
+    [
+      {
+        "id": "agents",
+        "type": "agent-activity",
+        "color": "ansi256:213",
+        "responsive": {
+          "visibilityPriority": 50,
+          "variants": [
+            "full",
+            "short",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "A"
+        }
+      },
+      {
+        "id": "tools",
+        "type": "tool-activity",
+        "color": "ansi256:82",
+        "responsive": {
+          "visibilityPriority": 25,
+          "variants": [
+            "full",
+            "short",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "hidden",
+          "shortLabel": "T"
+        }
+      },
+      {
+        "id": "session",
+        "type": "session-clock",
+        "color": "ansi256:220",
+        "responsive": {
+          "visibilityPriority": 48,
+          "variants": [
+            "full",
+            "short",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "short",
+          "narrowStart": "value-only",
+          "shortLabel": "S"
+        }
+      }
+    ]
+  ],
+  "flexMode": "full",
+  "compactThreshold": 75,
+  "colorLevel": 2,
+  "defaultSeparator": " │ ",
+  "defaultPadding": "",
+  "defaultPaddingSide": "both",
+  "inheritSeparatorColors": false,
+  "globalBold": true,
+  "gitCacheTtlSeconds": 5,
+  "minimalistMode": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [],
+    "endCaps": [],
+    "autoAlign": false,
+    "continueThemeAcrossLines": false
+  }
+}
