@@ -91,6 +91,12 @@ describe('GitCiStatusWidget', () => {
         expect(render({ cwd: '/tmp/repo' }, { getCachedGitReviewData: () => null })).toBe('-');
     });
 
+    it('returns null when no PR exists and hideNoGit is set', () => {
+        expect(
+            render({ cwd: '/tmp/repo', hideNoGit: true }, { getCachedGitReviewData: () => null })
+        ).toBeNull();
+    });
+
     it('renders "-" when the PR has no checks', () => {
         const noChecks = { ...PASSING_PR, checks: undefined };
         expect(render({ cwd: '/tmp/repo' }, { getCachedGitReviewData: () => noChecks })).toBe('-');

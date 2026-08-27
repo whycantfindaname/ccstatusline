@@ -110,7 +110,12 @@ export class GitCiStatusWidget implements Widget {
         }
 
         const cwd = this.deps.resolveGitCwd(context) ?? this.deps.getProcessCwd();
-        const checks = this.deps.getCachedGitReviewData(cwd, { includeChecks: true })?.checks;
+        const reviewData = this.deps.getCachedGitReviewData(cwd, { includeChecks: true });
+        if (!reviewData) {
+            return isHideNoGitEnabled(item) ? null : NO_CHECKS;
+        }
+
+        const checks = reviewData.checks;
         if (!checks) {
             return NO_CHECKS;
         }

@@ -1015,8 +1015,6 @@ function verifyStatuslineSmoke(
             trimOutput: false
         });
         const required = [
-            'Provider',
-            'ClipProxyAPI',
             'Model',
             'GPT 5.6 Sol',
             'Effort',

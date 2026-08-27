@@ -36,7 +36,7 @@ describe('responsive layout planner', () => {
         }
     });
 
-    it('preserves provider and model at the narrowest width', () => {
+    it('preserves model at the narrowest width', () => {
         const planned = planResponsiveLine(SETTINGS.lines[0] ?? [], SETTINGS, {
             isPreview: true,
             terminalWidth: 40,
@@ -44,7 +44,6 @@ describe('responsive layout planner', () => {
         });
         const content = planned.map(item => item.content).filter(Boolean).join(' ');
 
-        expect(content).toContain('ClipProxyAPI');
         expect(content).toContain('Claude');
     });
 

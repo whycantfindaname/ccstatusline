@@ -3,19 +3,6 @@
   "lines": [
     [
       {
-        "id": "provider",
-        "type": "provider",
-        "color": "cyan",
-        "responsive": {
-          "visibilityPriority": 100,
-          "variants": ["full", "short", "value-only"],
-          "mediumStart": "short",
-          "narrowStart": "value-only",
-          "shortLabel": "P",
-          "allowValueTruncate": true
-        }
-      },
-      {
         "id": "model",
         "type": "model",
         "color": "brightCyan",
@@ -64,6 +51,29 @@
           "mediumStart": "short",
           "narrowStart": "hidden",
           "shortLabel": "CC"
+        }
+      },
+      {
+        "id": "session-name",
+        "type": "session-name",
+        "color": "yellow",
+        "responsive": {
+          "visibilityPriority": 45,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden",
+          "allowValueTruncate": true
+        }
+      },
+      {
+        "id": "account-email",
+        "type": "claude-account-email",
+        "color": "brightBlack",
+        "responsive": {
+          "visibilityPriority": 24,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
         }
       }
     ],
@@ -170,6 +180,20 @@
           "mediumStart": "value-only",
           "narrowStart": "hidden"
         }
+      },
+      {
+        "id": "git-review",
+        "type": "git-review",
+        "color": "green",
+        "metadata": {
+          "hideNoGit": "true"
+        },
+        "responsive": {
+          "visibilityPriority": 58,
+          "variants": ["full", "value-only", "hidden"],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
       }
     ],
     [
@@ -206,6 +230,17 @@
           "variants": ["full", "value-only"],
           "mediumStart": "value-only",
           "narrowStart": "value-only"
+        }
+      },
+      {
+        "id": "context-bar",
+        "type": "context-bar",
+        "color": "blue",
+        "responsive": {
+          "visibilityPriority": 72,
+          "variants": ["full", "hidden"],
+          "mediumStart": "hidden",
+          "narrowStart": "hidden"
         }
       },
       {
@@ -289,6 +324,28 @@
         "color": "brightBlue",
         "responsive": {
           "visibilityPriority": 40,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "speed-out",
+        "type": "output-speed",
+        "color": "cyan",
+        "responsive": {
+          "visibilityPriority": 76,
+          "variants": ["full", "hidden"],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "speed-total",
+        "type": "total-speed",
+        "color": "brightBlack",
+        "responsive": {
+          "visibilityPriority": 38,
           "variants": ["full", "hidden"],
           "mediumStart": "full",
           "narrowStart": "hidden"
