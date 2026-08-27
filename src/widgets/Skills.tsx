@@ -16,6 +16,7 @@ import type {
 } from '../types/Widget';
 import type { WidgetHookDef } from '../utils/hooks';
 import { shouldInsertInput } from '../utils/input-guards';
+import { getLastSkillFromTranscript } from '../utils/skills';
 
 import { makeModifierText } from './shared/editor-display';
 import {
@@ -133,7 +134,8 @@ export class SkillsWidget implements Widget {
         }
 
         if (mode === 'current') {
-            const currentSkill = context.skillsMetrics?.lastSkill;
+            const currentSkill = context.skillsMetrics?.lastSkill
+                ?? getLastSkillFromTranscript(context.data?.transcript_path);
             if (!currentSkill) {
                 if (hideWhenEmpty) {
                     return null;
