@@ -45,6 +45,8 @@ bun run lint:fix
 The fork-specific deployment authority is
 `docs/superpowers/specs/2026-07-29-ccswitch-aware-statusline-design.md`; operator
 steps are in `docs/superpowers/runbooks/ccswitch-aware-statusline.md`.
+QoderCN uses a separate, isolated statusline deployment described in
+`config/qoder/README.md`; it must never go through `deploy:local`.
 
 ```bash
 # Read-only validation
