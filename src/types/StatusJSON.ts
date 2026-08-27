@@ -86,7 +86,21 @@ export const StatusJSONSchema = z.looseObject({
         seven_day: RateLimitPeriodSchema.optional(),
         seven_day_sonnet: RateLimitPeriodSchema.nullable().optional(),
         seven_day_opus: RateLimitPeriodSchema.nullable().optional()
-    }).nullable().optional()
+    }).nullable().optional(),
+    permission_mode: z.string().optional(),
+    credits: z.looseObject({
+        total_remaining: CoercedNumberSchema.optional(),
+        total_usage_percentage: CoercedNumberSchema.optional(),
+        is_quota_exceeded: z.boolean().optional(),
+        expires_at: CoercedNumberSchema.optional(),
+        unit: z.string().optional(),
+        user_quota: z.looseObject({
+            total: CoercedNumberSchema.optional(),
+            used: CoercedNumberSchema.optional(),
+            remaining: CoercedNumberSchema.optional(),
+            percentage: CoercedNumberSchema.optional()
+        }).optional()
+    }).optional()
 });
 
 export type StatusJSON = z.infer<typeof StatusJSONSchema>;

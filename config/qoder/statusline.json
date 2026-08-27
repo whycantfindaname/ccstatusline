@@ -68,6 +68,20 @@
           "narrowStart": "hidden",
           "allowValueTruncate": true
         }
+      },
+      {
+        "id": "vim-mode",
+        "type": "vim-mode",
+        "color": "ansi256:213",
+        "responsive": {
+          "visibilityPriority": 52,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
+        }
       }
     ],
     [
@@ -316,6 +330,50 @@
           "mediumStart": "short",
           "narrowStart": "value-only",
           "shortLabel": "S"
+        }
+      },
+      {
+        "id": "credits",
+        "type": "credits",
+        "color": "ansi256:220",
+        "responsive": {
+          "visibilityPriority": 46,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "permission-mode",
+        "type": "permission-mode",
+        "color": "ansi256:246",
+        "responsive": {
+          "visibilityPriority": 44,
+          "variants": [
+            "full",
+            "value-only",
+            "hidden"
+          ],
+          "mediumStart": "value-only",
+          "narrowStart": "hidden"
+        }
+      },
+      {
+        "id": "lines-changed",
+        "type": "lines-changed",
+        "color": "ansi256:82",
+        "responsive": {
+          "visibilityPriority": 42,
+          "variants": [
+            "full",
+            "hidden"
+          ],
+          "mediumStart": "full",
+          "narrowStart": "hidden"
         }
       }
     ]

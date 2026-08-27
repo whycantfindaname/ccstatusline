@@ -92,3 +92,6 @@ export { SandboxStatusWidget } from './SandboxStatus';
 export { VoiceStatusWidget } from './VoiceStatus';
 export { RemoteControlStatusWidget } from './RemoteControlStatus';
 export { CacheTimerWidget } from './CacheTimer';
+export { QoderCreditsWidget } from './QoderCredits';
+export { PermissionModeWidget } from './PermissionMode';
+export { LinesChangedWidget } from './LinesChanged';

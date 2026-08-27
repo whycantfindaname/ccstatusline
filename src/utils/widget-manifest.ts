@@ -110,7 +110,10 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'worktree-branch', create: () => new widgets.GitWorktreeBranchWidget() },
     { type: 'worktree-original-branch', create: () => new widgets.GitWorktreeOriginalBranchWidget() },
     { type: 'compaction-counter', create: () => new widgets.CompactionCounterWidget() },
-    { type: 'cache-timer', create: () => new widgets.CacheTimerWidget() }
+    { type: 'cache-timer', create: () => new widgets.CacheTimerWidget() },
+    { type: 'credits', create: () => new widgets.QoderCreditsWidget() },
+    { type: 'permission-mode', create: () => new widgets.PermissionModeWidget() },
+    { type: 'lines-changed', create: () => new widgets.LinesChangedWidget() }
 ];
 
 export const LAYOUT_WIDGET_MANIFEST: LayoutWidgetManifestEntry[] = [
