@@ -178,8 +178,8 @@ Default to using Bun instead of Node.js:
 - Managed branch: `qoder-statusline` (fork-only branch; no upstream mirror)
 - Repository convergence authority: Agent Infra registry and sync contract (fetch, classify, pin fast-forward)
 - Owner workflow + product/runtime authority: this repository's own source, `AGENTS.md`, the Qoder deployment docs below, and `README.md`
-- Workflow status: `registered` (`project_workflow=not_migrated`; no managed-project contract yet)
-- Read order: `AGENTS.md` -> `config/qoder/README.md` (isolated Qoder statusline deployment) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
+- Workflow status: `full_workflow` (initial source-verification contract)
+- Read order: `AGENTS.md` -> `.jason-liao-agent-infra/README.md` -> `config/qoder/README.md` (isolated Qoder statusline deployment) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
 - Update triggers: managed branch or remote change; build/release chain change; platform activation change; service/config/secret ownership change; new stable error class; a completed reusable major update flow
-- Registered clause: the next substantive update task hitting a trigger must either promote the verified workflow into a managed-project contract (`.agent-infra/managed-project.json`) plus human guide and current error catalog, or record a concrete no-op reason
-- Do not invent workflow: until migration, follow only the docs above; do not guess build, deploy, or activation steps
+- Contract clause: workflow contract, human guide, and current error catalog live together under `.jason-liao-agent-infra/`; extend the initial contract only with verified build, Qoder deployment, activation, or acceptance steps
+- Do not invent workflow: follow only the declared contract and the docs above; do not guess build, deploy, or activation steps
