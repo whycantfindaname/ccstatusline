@@ -3,6 +3,14 @@
 This file provides shared repository guidance to coding agents. `CLAUDE.md` is a
 symlink to this file; edit `AGENTS.md` rather than maintaining two copies.
 
+## Managed repository workflow
+
+- Workflow status: `full_workflow` (initial source-verification contract).
+- Read order: `AGENTS.md`/`CLAUDE.md` -> `.jason-liao-agent-infra/README.md` -> project documentation.
+- The workflow contract, human guide, and current error catalog live together under
+  `.jason-liao-agent-infra/`; add later build, deployment, or acceptance stages only after
+  they have been verified in real project operation.
+
 ## Project Overview
 
 ccstatusline is a customizable status line formatter for Claude Code CLI that displays model info, git branch, token usage, and other metrics. It functions as both:
