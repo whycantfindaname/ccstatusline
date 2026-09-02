@@ -175,3 +175,15 @@ Default to using Bun instead of Node.js:
   - Run deployment coverage with `bun test --timeout=7000 ./scripts/__tests__/deploy-local.test.ts`
   - Test configuration: `vitest.config.ts`
   - Manual testing is also available via piped input and TUI interaction
+
+## Managed Repository Context
+
+- Registry ID: `ccstatusline` (Agent Infra companion manifest `manifests/companion-repositories.json`)
+- Managed branch: `lwj_dev` (upstream mirror baseline: `main`)
+- Repository convergence authority: Agent Infra registry and sync contract (fetch, classify, safe fast-forward)
+- Owner workflow + product/runtime authority: this repository's own source, `AGENTS.md`, the deployment spec/runbook below, and `README.md`
+- Workflow status: `registered` (`project_workflow=not_migrated`; no managed-project contract yet)
+- Read order: `AGENTS.md` -> `docs/superpowers/specs/2026-07-29-ccswitch-aware-statusline-design.md` (portable deployment authority) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
+- Update triggers: managed branch or remote change; build/release chain change; platform activation change; service/config/secret ownership change; new stable error class; a completed reusable major update flow
+- Registered clause: the next substantive update task hitting a trigger must either promote the verified workflow into a managed-project contract (`.agent-infra/managed-project.json`) plus human guide and current error catalog, or record a concrete no-op reason
+- Do not invent workflow: until migration, follow only the docs above; do not guess build, deploy, or activation steps
