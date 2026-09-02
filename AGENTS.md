@@ -3,12 +3,6 @@
 This file provides shared repository guidance to coding agents. `CLAUDE.md` is a
 symlink to this file; edit `AGENTS.md` rather than maintaining two copies.
 
-## Managed repository workflow
-
-- Delivery status: `delivery_not_applicable`; Claude-managed OAuth and this statusline do not expose an Agent Infra delivery artifact.
-- Read order: `AGENTS.md`/`CLAUDE.md` -> project documentation.
-- No project-local delivery contract is active; project build and development remain owned by this repository.
-
 ## Project Overview
 
 ccstatusline is a customizable status line formatter for Claude Code CLI that displays model info, git branch, token usage, and other metrics. It functions as both:
@@ -182,8 +176,8 @@ Default to using Bun instead of Node.js:
 - Managed branch: `lwj_dev` (upstream mirror baseline: `main`)
 - Repository convergence authority: Agent Infra registry and sync contract (fetch, classify, safe fast-forward)
 - Owner workflow + product/runtime authority: this repository's own source, `AGENTS.md`, the deployment spec/runbook below, and `README.md`
-- Workflow status: `registered` (`project_workflow=not_migrated`; no managed-project contract yet)
+- Delivery status: `delivery_not_applicable`; Claude-managed OAuth and this statusline do not expose an Agent Infra delivery artifact.
 - Read order: `AGENTS.md` -> `docs/superpowers/specs/2026-07-29-ccswitch-aware-statusline-design.md` (portable deployment authority) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
 - Update triggers: managed branch or remote change; build/release chain change; platform activation change; service/config/secret ownership change; new stable error class; a completed reusable major update flow
-- Registered clause: the next substantive update task hitting a trigger must either promote the verified workflow into a managed-project contract (`.agent-infra/managed-project.json`) plus human guide and current error catalog, or record a concrete no-op reason
-- Do not invent workflow: until migration, follow only the docs above; do not guess build, deploy, or activation steps
+- No project-local delivery contract is active; project build and development remain owned by this repository.
+- Do not invent workflow: follow only the docs above; do not guess build, deploy, or activation steps.
