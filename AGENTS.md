@@ -178,8 +178,8 @@ Default to using Bun instead of Node.js:
 - Managed branch: `qoder-statusline` (fork-only branch; no upstream mirror)
 - Repository convergence authority: Agent Infra registry and sync contract (fetch, classify, pin fast-forward)
 - Owner workflow + product/runtime authority: this repository's own source, `AGENTS.md`, the Qoder deployment docs below, and `README.md`
-- Workflow status: `full_workflow` (initial source-verification contract)
-- Read order: `AGENTS.md` -> `.jason-liao-agent-infra/README.md` -> `config/qoder/README.md` (isolated Qoder statusline deployment) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
+- Delivery status: `delivery_not_applicable`; this branch variant has no direct Agent Infra delivery artifact.
+- Read order: `AGENTS.md` -> `config/qoder/README.md` (isolated Qoder statusline deployment) -> `docs/superpowers/runbooks/ccswitch-aware-statusline.md` (operator runbook) -> `README.md`
 - Update triggers: managed branch or remote change; build/release chain change; platform activation change; service/config/secret ownership change; new stable error class; a completed reusable major update flow
-- Contract clause: workflow contract, human guide, and current error catalog live together under `.jason-liao-agent-infra/`; extend the initial contract only with verified build, Qoder deployment, activation, or acceptance steps
+- Contract clause: no project-local delivery contract is active; build and Qoder deployment remain project-owned
 - Do not invent workflow: follow only the declared contract and the docs above; do not guess build, deploy, or activation steps
