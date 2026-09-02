@@ -5,11 +5,9 @@ symlink to this file; edit `AGENTS.md` rather than maintaining two copies.
 
 ## Managed repository workflow
 
-- Workflow status: `full_workflow` (initial source-verification contract).
-- Read order: `AGENTS.md`/`CLAUDE.md` -> `.jason-liao-agent-infra/README.md` -> project documentation.
-- The workflow contract, human guide, and current error catalog live together under
-  `.jason-liao-agent-infra/`; add later build, deployment, or acceptance stages only after
-  they have been verified in real project operation.
+- Delivery status: `delivery_not_applicable`; Claude-managed OAuth and this statusline do not expose an Agent Infra delivery artifact.
+- Read order: `AGENTS.md`/`CLAUDE.md` -> project documentation.
+- No project-local delivery contract is active; project build and development remain owned by this repository.
 
 ## Project Overview
 
