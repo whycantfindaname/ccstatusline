@@ -316,7 +316,7 @@ if [ -z "\${HOME:-}" ]; then
   exit 0
 fi
 cache_dir="\${XDG_CACHE_HOME:-\${HOME}/.cache}/ccstatusline/last-good"
-cache_dir=\${cache_dir//\\\\//}
+cache_dir=$(printf '%s\\n' "$cache_dir" | ${sedPath} 's#\\\\#/#g')
 case "$cache_dir" in
   /*|[A-Za-z]:/*) ;;
   *)

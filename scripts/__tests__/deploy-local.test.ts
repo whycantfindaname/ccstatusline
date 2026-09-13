@@ -13,6 +13,7 @@ import * as path from 'node:path';
 
 import {
     projectActiveRuntime,
+    releaseWrapper,
     resolveDeploymentPaths,
     resolveDispatcherTools,
     resolveProviderRegistry,
@@ -1255,6 +1256,55 @@ exit 0
             } finally {
                 fs.rmSync(fixture.root, { recursive: true, force: true });
             }
+        }
+    });
+});
+
+describe('generated dispatcher shell portability', () => {
+    it('keeps release and cache path normalization POSIX-sh compatible', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-shell-portability-'));
+        try {
+            const paths = {
+                backupRoot: path.join(root, 'backups'),
+                configuredSettingsPath: path.join(root, 'settings.json'),
+                repoRoot: root,
+                settingsPath: path.join(root, 'settings.json'),
+                targetRoot: path.join(root, 'statusline'),
+                validationRoot: root
+            };
+            const tools = {
+                findPath: '/usr/bin/find',
+                mktempPath: '/usr/bin/mktemp',
+                sedPath: '/usr/bin/sed',
+                sha256Args: [],
+                sha256Path: '/usr/bin/sha256sum'
+            };
+            const generated = [
+                releaseWrapper(paths, false),
+                releaseWrapper(paths, true),
+                stableDispatcher(paths, tools, true),
+                buildStatuslineDispatcher({
+                    targetRoot: paths.targetRoot,
+                    ...tools
+                })
+            ];
+            expect(generated[0]).not.toContain('${CCSTATUSLINE_RELEASE_ROOT//');
+            expect(generated[1]).not.toContain('${CCSTATUSLINE_RELEASE_ROOT//');
+            expect(generated[2]).not.toContain('${runtime_root//');
+            expect(generated[3]).not.toContain('${cache_dir//');
+
+            const shell = process.platform === 'win32' ? 'bash' : '/bin/sh';
+            const shellArgs = process.platform === 'win32'
+                ? ['--noprofile', '--norc', '-n']
+                : ['-n'];
+            for (const [index, script] of generated.entries()) {
+                const scriptPath = path.join(root, `generated-${index}.sh`);
+                fs.writeFileSync(scriptPath, script, { mode: 0o755 });
+                const result = spawnSync(shell, [...shellArgs, shellPathForTest(scriptPath)], { encoding: 'utf8' });
+                expect(result.status, `${index}: ${result.stderr}`).toBe(0);
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
         }
     });
 });

@@ -513,13 +513,13 @@ function restoreManagedSettings(
     return restoreManagedSettingsPure(current, backup, managedPatch(paths));
 }
 
-function releaseWrapper(paths: DeploymentPaths, hook: boolean): string {
+export function releaseWrapper(paths: DeploymentPaths, hook: boolean): string {
     const extraArg = hook ? ' --activity-hook' : '';
     const releasePrefix = shellQuote(`${shellPath(paths.targetRoot)}/releases/`);
     return `#!/bin/sh
 set -eu
 : "\${CCSTATUSLINE_RELEASE_ROOT:?missing pinned release root}"
-release_root=\${CCSTATUSLINE_RELEASE_ROOT//\\\\//}
+release_root=$(printf '%s\\n' "$CCSTATUSLINE_RELEASE_ROOT" | sed 's#\\\\#/#g')
 case "$release_root" in
   ${releasePrefix}*) ;;
   *) exit 1 ;;
@@ -567,7 +567,7 @@ export function stableDispatcher(
 set -u
 [ -n "\${HOME:-}" ] || exit 0
 runtime_root="\${JASON_CCSTATUSLINE_RUNTIME_ROOT:-\${HOME}/.local/share/ccstatusline}"
-runtime_root=\${runtime_root//\\\\//}
+runtime_root=$(printf '%s\\n' "$runtime_root" | ${sedPath} 's#\\\\#/#g')
 case "$runtime_root" in
   /*|[A-Za-z]:/*) ;;
   *) exit 0 ;;
