@@ -15,6 +15,11 @@ import {
     GitChangesWidget,
     formatGitChanges
 } from '../GitChanges';
+import {
+    clearGitChangeSnapshot,
+    primeGitChangeSnapshot,
+    WIDGET_GIT_CWD
+} from './helpers/git-change-snapshot';
 
 vi.mock('child_process', () => ({
     execSync: vi.fn(),
@@ -31,6 +36,7 @@ const mockExecFileSync = execFileSync as unknown as {
 
 function render(options: {
     cwd?: string;
+    hide?: string;
     hideNoGit?: boolean;
     isPreview?: boolean;
 } = {}) {
@@ -42,16 +48,16 @@ function render(options: {
     const item: WidgetItem = {
         id: 'git-changes',
         type: 'git-changes',
-        metadata: options.hideNoGit ? { hideNoGit: 'true' } : undefined
+        metadata: options.hide ? { hide: options.hide } : (options.hideNoGit ? { hide: 'no-git' } : undefined)
     };
-
     return widget.render(item, context, DEFAULT_SETTINGS);
 }
 
 describe('GitChangesWidget', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        clearGitCache();
+        clearGitCache(true);
+        clearGitChangeSnapshot();
     });
 
     it('should render preview', () => {
@@ -91,21 +97,35 @@ describe('GitChangesWidget', () => {
         })).toBe('(+12,-3)~');
     });
 
+    it('should hide zero changes when the zero state is enabled', () => {
+        primeGitChangeSnapshot(0, 0);
+        mockExecFileSync.mockReturnValueOnce('true\n');
+
+        expect(render({ cwd: WIDGET_GIT_CWD, hide: 'zero' })).toBeNull();
+    });
+
+    it('should keep non-zero changes visible with the zero state enabled', () => {
+        primeGitChangeSnapshot(2, 1);
+        mockExecFileSync.mockReturnValueOnce('true\n');
+
+        expect(render({ cwd: WIDGET_GIT_CWD, hide: 'zero' })).toBe('(+2,-1)');
+    });
+
     it('should render no git when probe returns false', () => {
         mockExecFileSync.mockReturnValue('false\n');
 
-        expect(render()).toBe('(no git)');
+        expect(render({ cwd: '/tmp/ccstatusline-no-git' })).toBe('(no git)');
     });
 
     it('should hide no git when configured', () => {
         mockExecFileSync.mockReturnValue('false\n');
 
-        expect(render({ hideNoGit: true })).toBeNull();
+        expect(render({ cwd: '/tmp/ccstatusline-no-git', hideNoGit: true })).toBeNull();
     });
 
     it('should render no git when command fails', () => {
         mockExecFileSync.mockImplementation(() => { throw new Error('No git'); });
 
-        expect(render()).toBe('(no git)');
+        expect(render({ cwd: '/tmp/ccstatusline-no-git' })).toBe('(no git)');
     });
 });

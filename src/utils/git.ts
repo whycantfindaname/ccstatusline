@@ -211,14 +211,25 @@ function readPersistentCache(cachePath: string): PersistentGitCache | null {
 }
 
 function writePersistentCache(cachePath: string, cache: PersistentGitCache): void {
+    // Stable temp name: a held handle (e.g. a Windows virus scanner or sync
+    // client) can make the rename and the cleanup unlink both fail with
+    // EPERM, so a unique name would leak one file per write. Reusing one
+    // name bounds that to a single orphan per repo that the next write
+    // truncates. Costs: while the handle is held, writes for that repo fail
+    // (just extra cache misses), and a concurrent writer can tear the
+    // renamed-over cache file - readPersistentCache treats malformed JSON
+    // as a miss either way.
+    const tempPath = `${cachePath}.tmp`;
     try {
-        const cacheDir = path.dirname(cachePath);
-        fs.mkdirSync(cacheDir, { recursive: true });
-        const tempPath = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+        fs.mkdirSync(path.dirname(cachePath), { recursive: true });
         fs.writeFileSync(tempPath, JSON.stringify(cache), 'utf-8');
         fs.renameSync(tempPath, cachePath);
     } catch {
-        // Best-effort cache; statusline rendering should never fail because of it.
+        // Best-effort cache; statusline rendering should never fail because
+        // of it, so unlike config.ts:writeSettingsJson we do not rethrow.
+        try {
+            fs.unlinkSync(tempPath);
+        } catch { /* best-effort cleanup; ignore */ }
     }
 }
 
@@ -369,8 +380,24 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
 /**
  * Clear git command cache - for testing only
  */
-export function clearGitCache(): void {
+export function clearGitCache(clearPersistent = false): void {
     gitCommandCache.clear();
+    if (!clearPersistent) {
+        return;
+    }
+
+    const cacheDir = path.join(getCacheDir(), 'git-cache');
+    try {
+        for (const entry of fs.readdirSync(cacheDir)) {
+            try {
+                fs.unlinkSync(path.join(cacheDir, entry));
+            } catch {
+                // Test cleanup is best effort.
+            }
+        }
+    } catch {
+        // The persistent cache directory may not exist yet.
+    }
 }
 
 export function isInsideGitWorkTree(context: RenderContext): boolean {

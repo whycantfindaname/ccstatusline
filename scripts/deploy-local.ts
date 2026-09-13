@@ -148,15 +148,21 @@ function commandPathOptional(command: string): string | null {
             return null;
         }
     }
-    const result = spawnSync(
-        '/bin/sh',
-        ['-c', 'command -v "$1"', 'resolve-command', command],
-        {
+    const result = process.platform === 'win32'
+        ? spawnSync('where.exe', [command], {
             encoding: 'utf8',
             env: commandEnvironment(),
             stdio: ['ignore', 'pipe', 'ignore']
-        }
-    );
+        })
+        : spawnSync(
+            '/bin/sh',
+            ['-c', 'command -v "$1"', 'resolve-command', command],
+            {
+                encoding: 'utf8',
+                env: commandEnvironment(),
+                stdio: ['ignore', 'pipe', 'ignore']
+            }
+        );
     return result.status === 0 && result.stdout.trim().length > 0
         ? result.stdout.trim()
         : null;
@@ -994,9 +1000,10 @@ function semanticEqual(left: unknown, right: unknown): boolean {
 }
 
 function validateManagedPatchPaths(paths: DeploymentPaths): void {
-    const serialized = JSON.stringify(managedPatch(paths));
-    if (!serialized.includes(`${paths.targetRoot}/bin/ccstatusline`)
-        || !serialized.includes(`${paths.targetRoot}/bin/ccstatusline-hook`)
+    const serialized = JSON.stringify(managedPatch(paths)).replaceAll('\\\\', '/');
+    const targetRoot = paths.targetRoot.replaceAll('\\', '/');
+    if (!serialized.includes(`${targetRoot}/bin/ccstatusline`)
+        || !serialized.includes(`${targetRoot}/bin/ccstatusline-hook`)
         || serialized.includes('/ccswitch-statusline')) {
         throw new Error('Managed settings patch contains an invalid statusline command');
     }
