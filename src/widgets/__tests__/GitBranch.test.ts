@@ -18,6 +18,7 @@ import { GitBranchWidget } from '../GitBranch';
 vi.mock('child_process', () => ({
     execSync: vi.fn(),
     execFileSync: vi.fn(),
+    spawn: vi.fn(),
     spawnSync: vi.fn()
 }));
 

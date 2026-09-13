@@ -1,5 +1,9 @@
 export type JsonObject = Record<string, unknown>;
 
+export function runtimeBinaryName(): string {
+    return process.platform === 'win32' ? 'ccstatusline.exe' : 'ccstatusline';
+}
+
 export interface ManagedActivityHook {
     event: string;
     matcher?: string;
@@ -227,6 +231,7 @@ export interface StatuslineDispatcherOptions {
     coldTimeout?: string;
     findPath: string;
     mktempPath: string;
+    shPath?: string;
     sedPath: string;
     sha256Args?: readonly string[];
     sha256Path: string;
@@ -236,6 +241,10 @@ export interface StatuslineDispatcherOptions {
 
 function shellQuote(value: string): string {
     return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function shellPath(value: string): string {
+    return process.platform === 'win32' ? value.replaceAll('\\', '/') : value;
 }
 
 function checkedDuration(value: string, name: string): string {
@@ -249,14 +258,16 @@ function checkedDuration(value: string, name: string): string {
 export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions): string {
     const coldTimeout = checkedDuration(options.coldTimeout ?? '4s', 'coldTimeout');
     const warmTimeout = checkedDuration(options.warmTimeout ?? '1s', 'warmTimeout');
-    const activeReleasePath = shellQuote(`${options.targetRoot}/active-release`);
-    const releasesPath = shellQuote(`${options.targetRoot}/releases`);
-    const sedPath = shellQuote(options.sedPath);
+    const activeReleasePath = shellQuote(`${shellPath(options.targetRoot)}/active-release`);
+    const releasesPath = shellQuote(`${shellPath(options.targetRoot)}/releases`);
+    const sedPath = shellQuote(shellPath(options.sedPath));
     const sha256Command = [options.sha256Path, ...(options.sha256Args ?? [])]
+        .map(shellPath)
         .map(shellQuote)
         .join(' ');
-    const findPath = shellQuote(options.findPath);
-    const mktempPath = shellQuote(options.mktempPath);
+    const findPath = shellQuote(shellPath(options.findPath));
+    const mktempPath = shellQuote(shellPath(options.mktempPath));
+    const shPath = shellQuote(shellPath(options.shPath ?? 'sh'));
 
     return `#!/bin/sh
 set -u
@@ -291,14 +302,23 @@ case "$release_root" in
     ;;
 esac
 export CCSTATUSLINE_RELEASE_ROOT="$release_root"
+runtime_binary="$release_root/bin/${runtimeBinaryName()}"
+if [ ! -x "$runtime_binary" ]; then
+  runtime_binary="$release_root/bin/ccstatusline"
+fi
+[ -x "$runtime_binary" ] || {
+  printf '%s\\n' 'Statusline refreshing; runtime unavailable'
+  exit 0
+}
 
 if [ -z "\${HOME:-}" ]; then
   printf '%s\\n' 'Statusline refreshing; HOME unavailable'
   exit 0
 fi
 cache_dir="\${XDG_CACHE_HOME:-\${HOME}/.cache}/ccstatusline/last-good"
+cache_dir=\${cache_dir//\\\\//}
 case "$cache_dir" in
-  /*) ;;
+  /*|[A-Za-z]:/*) ;;
   *)
     printf '%s\\n' 'Statusline refreshing; cache path unavailable'
     exit 0
@@ -341,8 +361,8 @@ if [ ! -s "$cache_file" ]; then
   duration=${shellQuote(coldTimeout)}
 fi
 status=0
-"$release_root/bin/ccstatusline" --internal-supervise "$duration" \
-  "$release_root/bin/ccstatusline-render" "$@" \
+    "$runtime_binary" --internal-supervise "$duration" \
+      ${shPath} "$release_root/bin/ccstatusline-render" "$@" \
   < "$payload_file" > "$output_file" || status=$?
 
 if [ "$status" -eq 0 ] && [ -s "$output_file" ]; then
