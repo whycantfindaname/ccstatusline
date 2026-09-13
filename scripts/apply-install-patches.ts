@@ -31,20 +31,20 @@ function diagnostic(result: ReturnType<typeof spawnSync>): string {
 }
 
 const INK_DELETE_BLOCK = [
-    "    else if (s === '\\x7f' || s === '\\x1b\\x7f') {",
+    '    else if (s === \'\\x7f\' || s === \'\\x1b\\x7f\') {',
     '        // TODO(vadimdemedes): `enquirer` detects delete key as backspace, but I had to split them up to avoid breaking changes in Ink. Merge them back together in the next major version.',
     '        // delete',
-    "        key.name = 'delete';",
-    "        key.meta = s.charAt(0) === '\\x1b';",
+    '        key.name = \'delete\';',
+    '        key.meta = s.charAt(0) === \'\\x1b\';',
     '    }'
 ].join('\n');
 
 const INK_BACKSPACE_BLOCK = [
-    "    else if (s === '\\x7f' || s === '\\x1b\\x7f') {",
+    '    else if (s === \'\\x7f\' || s === \'\\x1b\\x7f\') {',
     '        // On macOS, \\x7f is what the backspace key sends, not delete',
     '        // The actual forward delete sends escape sequences like \\x1b[3~',
-    "        key.name = 'backspace';",
-    "        key.meta = s.charAt(0) === '\\x1b';",
+    '        key.name = \'backspace\';',
+    '        key.meta = s.charAt(0) === \'\\x1b\';',
     '    }'
 ].join('\n');
 

@@ -15,10 +15,11 @@ import {
     GitDeletionsWidget,
     formatGitDeletions
 } from '../GitDeletions';
+
 import {
+    WIDGET_GIT_CWD,
     clearGitChangeSnapshot,
-    primeGitChangeSnapshot,
-    WIDGET_GIT_CWD
+    primeGitChangeSnapshot
 } from './helpers/git-change-snapshot';
 
 vi.mock('child_process', () => ({

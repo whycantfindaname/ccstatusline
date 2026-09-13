@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+    mkdirSync,
+    unlinkSync,
+    writeFileSync
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
