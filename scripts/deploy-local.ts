@@ -137,17 +137,15 @@ function run(
         trimOutput?: boolean;
     } = {}
 ): string {
-    let executable = command;
+    let executable = command === 'bun' && Boolean(process.versions.bun)
+        ? process.execPath
+        : command;
     let executableArgs = args;
     if (process.platform === 'win32') {
-        try {
-            const prefix = fs.readFileSync(command, { encoding: 'utf8' }).slice(0, 32);
-            if (prefix.startsWith('#!/bin/sh')) {
-                executable = commandPath('sh');
-                executableArgs = [command, ...args];
-            }
-        } catch {
-            // Keep the original command for non-file executables.
+        const interpreter = resolveWindowsScriptInterpreter(command);
+        if (interpreter) {
+            executable = interpreter.executable;
+            executableArgs = [...interpreter.args, ...args];
         }
     }
     const result = spawnSync(executable, executableArgs, {
@@ -175,17 +173,79 @@ function run(
     return options.trimOutput === false ? result.stdout : result.stdout.trim();
 }
 
+function resolveWindowsScriptInterpreter(
+    command: string
+): { executable: string; args: string[] } | null {
+    let firstLine: string;
+    try {
+        firstLine = fs.readFileSync(command, { encoding: 'utf8' }).split(/\r?\n/, 1)[0] ?? '';
+    } catch {
+        return null;
+    }
+    const match = /^#!\s*(\S+)(?:\s+(.*))?$/.exec(firstLine);
+    if (!match) {
+        return null;
+    }
+    const interpreterPath = match[1]?.replaceAll('\\', '/') ?? '';
+    const interpreterName = path.posix.basename(interpreterPath).toLowerCase();
+    const interpreterArgs = match[2]?.trim().split(/\s+/).filter(Boolean) ?? [];
+    let commandName = interpreterName;
+    let shebangArgs = interpreterArgs;
+    if (interpreterName === 'env') {
+        if (shebangArgs[0] === '-S') {
+            shebangArgs = shebangArgs.slice(1);
+        }
+        commandName = shebangArgs.shift()?.toLowerCase() ?? '';
+    }
+    if (commandName !== 'sh' && commandName !== 'bash' && commandName !== 'bun') {
+        return null;
+    }
+    const resolvedExecutable = commandName === 'bun' && Boolean(process.versions.bun)
+        ? process.execPath
+        : commandPath(commandName);
+    return {
+        args: [...shebangArgs, command],
+        executable: resolvedExecutable
+    };
+}
+
+function windowsSystemCommand(command: string): string {
+    const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
+    const absolute = path.join(systemRoot, 'System32', command);
+    return fs.existsSync(absolute) ? absolute : command;
+}
+
+export function selectFirstCommandPath(output: string): string | null {
+    return output
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .find((candidate) => {
+            try {
+                return fs.statSync(candidate).isFile();
+            } catch {
+                return false;
+            }
+        }) ?? null;
+}
+
 function commandPathOptional(command: string): string | null {
     if (command.includes(path.sep)) {
         try {
-            fs.accessSync(path.resolve(command), fs.constants.X_OK);
-            return path.resolve(command);
+            const resolved = path.resolve(command);
+            if (!fs.statSync(resolved).isFile()) {
+                return null;
+            }
+            if (process.platform !== 'win32') {
+                fs.accessSync(resolved, fs.constants.X_OK);
+            }
+            return resolved;
         } catch {
             return null;
         }
     }
     const result = process.platform === 'win32'
-        ? spawnSync('where.exe', [command], {
+        ? spawnSync(windowsSystemCommand('where.exe'), [command], {
             encoding: 'utf8',
             env: commandEnvironment(),
             stdio: ['ignore', 'pipe', 'ignore']
@@ -202,10 +262,13 @@ function commandPathOptional(command: string): string | null {
     if (result.status !== 0) {
         return null;
     }
-    return result.stdout.split(/\r?\n/).map(line => line.trim()).find(Boolean) ?? null;
+    return selectFirstCommandPath(result.stdout);
 }
 
 function commandPath(command: string): string {
+    if (command === 'bun' && process.versions.bun) {
+        return process.execPath;
+    }
     const resolved = commandPathOptional(command);
     if (!resolved) {
         throw new Error(`Required command is unavailable: ${command}`);
@@ -1317,7 +1380,7 @@ async function applyDeployment(options: CliOptions): Promise<void> {
         capture: true,
         env: validationEnv
     });
-    run('bun', ['test', '--timeout=7000', 'src'], {
+    run('bun', ['test', '--timeout=7000'], {
         cwd: paths.validationRoot,
         capture: true,
         env: validationEnv
@@ -1428,7 +1491,7 @@ function printPlan(options: CliOptions): void {
         targetRoot: paths.targetRoot,
         validation: [
             'bun run lint',
-            'bun test --timeout=7000 src',
+            'bun test --timeout=7000',
             'bun run build',
             'bun run build:local-runtime'
         ],

@@ -1,10 +1,12 @@
-import chalk from 'chalk';
+/* eslint-disable import-x/no-unresolved */
 import {
     describe,
     expect,
     it,
-    vi
-} from 'vitest';
+    mock
+} from 'bun:test';
+/* eslint-enable import-x/no-unresolved */
+import chalk from 'chalk';
 
 import {
     DEFAULT_SETTINGS,
@@ -254,7 +256,7 @@ describe('Main menu structure', () => {
         const manageItem = buildMainMenuItems(true, false, installation)
             .find(item => item !== '-' && item.value === 'manageInstallation');
 
-        expect(manageItem).toEqual(expect.objectContaining({ label: '🧰 Manage Installation' }));
+        expect(manageItem).toMatchObject({ label: '🧰 Manage Installation' });
     });
 
     it('uses a consistent update icon in manage installation and computes install selection indices', () => {
@@ -269,11 +271,11 @@ describe('Main menu structure', () => {
             installedVersion: '2.2.13'
         };
 
-        expect(configureItem).toEqual(expect.objectContaining({
+        expect(configureItem).toMatchObject({
             disabled: true,
             sublabel: '(install first)'
-        }));
-        expect(buildManageInstallationItems()[0]).toEqual(expect.objectContaining({ label: '🔄 Check for Updates' }));
+        });
+        expect(buildManageInstallationItems()[0]).toMatchObject({ label: '🔄 Check for Updates' });
         expect(getMainMenuInstallSelectionIndex(false)).toBe(7);
         expect(getMainMenuInstallSelectionIndex(true, autoInstallation)).toBe(8);
         expect(getMainMenuInstallSelectionIndex(true, pinnedInstallation)).toBe(8);
@@ -288,7 +290,7 @@ describe('Main menu structure', () => {
 describe('Invalid-config TUI guards', () => {
     it('returns null when there is no config load error', () => {
         expect(buildConfigLoadWarning(null)).toBeNull();
-        expect(buildInvalidConfigSaveConfirm(null, vi.fn())).toBeNull();
+        expect(buildInvalidConfigSaveConfirm(null, mock())).toBeNull();
     });
 
     it('builds a banner that names the reason and warns about overwriting', () => {
@@ -298,7 +300,7 @@ describe('Invalid-config TUI guards', () => {
     });
 
     it('builds a save-guard confirm dialog that returns to main on cancel', () => {
-        const guard = buildInvalidConfigSaveConfirm('settings.json could not be read', vi.fn());
+        const guard = buildInvalidConfigSaveConfirm('settings.json could not be read', mock());
         expect(guard).not.toBeNull();
         expect(guard?.cancelScreen).toBe('main');
         expect(guard?.message).toContain('preserved');
@@ -306,16 +308,16 @@ describe('Invalid-config TUI guards', () => {
     });
 
     it('invokes the provided onConfirm when the guard action runs', async () => {
-        const onConfirm = vi.fn();
+        const onConfirm = mock();
         const guard = buildInvalidConfigSaveConfirm('settings.json is not valid JSON', onConfirm);
         await guard?.action();
-        expect(onConfirm).toHaveBeenCalledOnce();
+        expect(onConfirm).toHaveBeenCalledTimes(1);
     });
 
     it('reflects the specific load-error reason in the save-guard message', () => {
-        expect(buildInvalidConfigSaveConfirm('settings.json is not valid JSON', vi.fn())?.message)
+        expect(buildInvalidConfigSaveConfirm('settings.json is not valid JSON', mock())?.message)
             .toContain('settings.json is not valid JSON');
-        expect(buildInvalidConfigSaveConfirm('settings.json is not in a valid format', vi.fn())?.message)
+        expect(buildInvalidConfigSaveConfirm('settings.json is not in a valid format', mock())?.message)
             .toContain('not in a valid format');
     });
 });

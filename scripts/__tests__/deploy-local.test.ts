@@ -1,19 +1,22 @@
-import { spawnSync } from 'node:child_process';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
+/* eslint-disable import-x/no-unresolved */
 import {
     describe,
     expect,
     it,
-    vi
-} from 'vitest';
+    mock
+} from 'bun:test';
+/* eslint-enable import-x/no-unresolved */
+import { spawnSync } from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 import {
     projectActiveRuntime,
     resolveDeploymentPaths,
     resolveDispatcherTools,
     resolveProviderRegistry,
+    selectFirstCommandPath,
     stableDispatcher,
     syncCCSwitchCommon
 } from '../deploy-local';
@@ -26,6 +29,7 @@ import {
     parseCCSwitchCommonConfig,
     parseProviderRegistry,
     restoreManagedSettings,
+    runtimeBinaryName,
     type JsonObject
 } from '../deploy-utils';
 
@@ -38,9 +42,59 @@ const MANAGED_PATCH_WITH_WIDGET_HOOKS = buildManagedPatch(
     ]
 );
 
-function writeSupervisorShim(releaseBin: string): void {
-    fs.writeFileSync(path.join(releaseBin, 'ccstatusline'), `#!/bin/sh
-exec ${JSON.stringify(process.execPath)} ${JSON.stringify(path.resolve('src/ccstatusline.ts'))} "$@"
+function spawnScript(
+    script: string,
+    args: string[],
+    options: Parameters<typeof spawnSync>[2]
+): ReturnType<typeof spawnSync> {
+    return process.platform === 'win32'
+        ? spawnSync('bash', ['--noprofile', '--norc', shellPathForTest(script), ...args], options)
+        : spawnSync(script, args, options);
+}
+
+function shellPathForTest(value: string): string {
+    if (process.platform !== 'win32') {
+        return value;
+    }
+    const match = /^([A-Za-z]):[\\/](.*)$/.exec(value);
+    if (!match) {
+        return value.replaceAll('\\', '/');
+    }
+    const drive = match[1];
+    const rest = match[2];
+    return drive && rest !== undefined
+        ? `/${drive.toLowerCase()}/${rest.replaceAll('\\', '/')}`
+        : value.replaceAll('\\', '/');
+}
+
+function writeSupervisorShim(releaseBin: string, production = true): void {
+    const supervisorPath = path.join(releaseBin, 'ccstatusline');
+    if (!production && process.platform === 'win32') {
+        fs.writeFileSync(supervisorPath, `#!/bin/sh
+[ "$1" = '--internal-supervise' ] || exit 2
+payload=$(cat)
+case "$payload" in
+  *'"mode":"slow"'*|*'"mode":"error"'*) exit 0 ;;
+  *'"label":"B"'*) printf '%s\\n' 'LIVE-B' ;;
+  *) printf '%s\\n' 'LIVE-A' ;;
+esac
+`, { mode: 0o755 });
+        return;
+    }
+    const runtimeScript = !production && process.platform === 'win32'
+        ? path.join(releaseBin, 'runtime-shim.ts')
+        : path.resolve('src/ccstatusline.ts');
+    if (!production && process.platform === 'win32') {
+        fs.writeFileSync(runtimeScript, `
+const args = process.argv.slice(2);
+if (args[0] !== '--internal-supervise') process.exit(2);
+const payload = JSON.parse(await Bun.stdin.text());
+if (payload.mode === 'slow' || payload.mode === 'error') process.exit(0);
+console.log(payload.label === 'B' ? 'LIVE-B' : 'LIVE-A');
+`);
+    }
+    fs.writeFileSync(supervisorPath, `#!/bin/sh
+exec ${JSON.stringify(shellPathForTest(process.execPath))} ${JSON.stringify(shellPathForTest(runtimeScript))} "$@"
 `, { mode: 0o755 });
 }
 
@@ -377,6 +431,19 @@ if (args[0] === 'config' && args[1] === 'path') {
         }
     });
 
+    it('selects the first valid command path from multiline Windows lookup output', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-command-path-'));
+        try {
+            const validPath = path.join(root, 'valid-command');
+            fs.writeFileSync(validPath, 'fixture\n');
+            expect(selectFirstCommandPath(
+                `${path.join(root, 'missing-command')}\r\n${validPath}\r\n${validPath}\r\n`
+            )).toBe(validPath);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('restores managed widget hooks recorded by the backup even after the layout changes', () => {
         const backup = mergeManagedSettings({}, MANAGED_PATCH_WITH_WIDGET_HOOKS);
         const current = mergeManagedSettings(backup, MANAGED_PATCH);
@@ -449,7 +516,7 @@ if (args[0] === 'config' && args[1] === 'path') {
                 'releases',
                 previousActive,
                 'bin',
-                'ccstatusline'
+                runtimeBinaryName()
             );
             fs.mkdirSync(backupRoot, { recursive: true });
             fs.mkdirSync(ccSwitchRoot, { recursive: true });
@@ -557,7 +624,7 @@ if (args[0] === 'config' && args[1] === 'path') {
                 runtimeRoot,
                 'versions',
                 previousActive,
-                'ccstatusline'
+                runtimeBinaryName()
             ), 'utf8')).toBe('#!/bin/sh\nexit 0\n');
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
@@ -630,7 +697,7 @@ describe('optional CCSwitch provider discovery', () => {
     });
 
     it('skips CCSwitch discovery in off mode', () => {
-        const discover = vi.fn(() => '');
+        const discover = mock(() => '');
         const result = resolveProviderRegistry('off', baseline, discover);
 
         expect(result.source).toBe('bundled');
@@ -651,17 +718,27 @@ describe('last-known-good statusline dispatcher', () => {
         try {
             const toolsRoot = path.join(root, 'bin');
             fs.mkdirSync(toolsRoot);
+            const suffix = process.platform === 'win32' ? '.cmd' : '';
             for (const tool of ['find', 'mktemp', 'sed']) {
-                fs.symlinkSync(`/usr/bin/${tool}`, path.join(toolsRoot, tool));
+                const toolPath = path.join(toolsRoot, `${tool}${suffix}`);
+                if (process.platform === 'win32') {
+                    fs.writeFileSync(toolPath, '@echo off\r\n');
+                } else {
+                    fs.symlinkSync(`/usr/bin/${tool}`, toolPath);
+                }
             }
-            const shasumPath = path.join(toolsRoot, 'shasum');
-            fs.writeFileSync(shasumPath, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+            const shasumPath = path.join(toolsRoot, `shasum${suffix}`);
+            fs.writeFileSync(
+                shasumPath,
+                process.platform === 'win32' ? '@echo off\r\n' : '#!/bin/sh\nexit 0\n',
+                { mode: 0o755 }
+            );
             process.env.PATH = toolsRoot;
 
             expect(resolveDispatcherTools()).toEqual({
-                findPath: path.join(toolsRoot, 'find'),
-                mktempPath: path.join(toolsRoot, 'mktemp'),
-                sedPath: path.join(toolsRoot, 'sed'),
+                findPath: path.join(toolsRoot, `find${suffix}`),
+                mktempPath: path.join(toolsRoot, `mktemp${suffix}`),
+                sedPath: path.join(toolsRoot, `sed${suffix}`),
                 sha256Args: ['-a', '256'],
                 sha256Path: shasumPath
             });
@@ -685,17 +762,27 @@ describe('last-known-good statusline dispatcher', () => {
             const cacheHome = path.join(home, 'cache');
             fs.mkdirSync(releaseBin, { recursive: true });
             fs.mkdirSync(home, { recursive: true });
-            writeSupervisorShim(releaseBin);
             const releaseId = 'a'.repeat(64);
             fs.renameSync(
                 path.join(targetRoot, 'releases', 'test-release'),
                 path.join(targetRoot, 'releases', releaseId)
             );
+            writeSupervisorShim(
+                path.join(targetRoot, 'releases', releaseId, 'bin'),
+                process.platform !== 'win32'
+            );
             const activeRelease = path.join(targetRoot, 'active-release');
             fs.writeFileSync(activeRelease, `${releaseId}\n`);
 
             const renderer = path.join(targetRoot, 'releases', releaseId, 'bin', 'ccstatusline-render');
-            fs.writeFileSync(renderer, `#!/bin/sh
+            const rendererSource = process.platform === 'win32'
+                ? `#!/usr/bin/env bun
+const payload = JSON.parse(await Bun.stdin.text());
+if (payload.mode === 'slow') process.exit(42);
+if (payload.mode === 'error') process.exit(42);
+console.log(payload.label === 'B' ? 'LIVE-B' : 'LIVE-A');
+`
+                : `#!/bin/sh
 payload=$(cat)
 case "$payload" in
   *'"mode":"slow"'*) sleep 2; printf '%s\\n' 'LATE' ;;
@@ -703,7 +790,8 @@ case "$payload" in
   *'"label":"B"'*) printf '%s\\n' 'LIVE-B' ;;
   *) printf '%s\\n' 'LIVE-A' ;;
 esac
-`, { mode: 0o755 });
+`;
+            fs.writeFileSync(renderer, rendererSource, { mode: 0o755 });
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
             const dispatcherTools = resolveDispatcherTools();
@@ -714,12 +802,12 @@ esac
                 sha256Args: dispatcherTools.sha256Args,
                 findPath: '/usr/bin/find',
                 mktempPath: '/usr/bin/mktemp',
+                shPath: process.platform === 'win32' ? shellPathForTest(process.execPath) : '/bin/sh',
                 warmTimeout: '0.25s',
                 coldTimeout: '1s'
             }), { mode: 0o755 });
-
             const run = (sessionId: string, mode: string, label = 'A', args: string[] = []) => {
-                return spawnSync(dispatcher, args, {
+                return spawnScript(dispatcher, args, {
                     encoding: 'utf8',
                     env: {
                         ...process.env,
@@ -765,12 +853,13 @@ esac
                     'last-good',
                     file
                 )).mode & 0o777;
-                expect(mode).toBe(0o600);
+                const privateMode = process.platform === 'win32' ? mode & 0o600 : mode;
+                expect(privateMode).toBe(0o600);
             }
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
-    });
+    }, process.platform === 'win32' ? 25000 : undefined);
 
     it('terminates renderer descendants when the deadline expires', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-process-tree-'));
@@ -785,12 +874,26 @@ esac
             fs.mkdirSync(home, { recursive: true });
             fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
             writeSupervisorShim(releaseBin);
-            fs.writeFileSync(path.join(releaseBin, 'ccstatusline-render'), `#!/bin/sh
+            const rendererSource = process.platform === 'win32'
+                ? `#!/usr/bin/env bun
+const child = Bun.spawn([process.execPath, '-e', 'setTimeout(() => {}, 30000)'], {
+    stdout: 'ignore',
+    stderr: 'ignore'
+});
+await Bun.write(${JSON.stringify(childPidPath)}, String(child.pid) + '\\n');
+await new Promise(() => {});
+`
+                : `#!/bin/sh
 trap 'exit 0' TERM
 sleep 30 &
 printf '%s\\n' "$!" > ${JSON.stringify(childPidPath)}
 wait
-`, { mode: 0o755 });
+`;
+            fs.writeFileSync(
+                path.join(releaseBin, 'ccstatusline-render'),
+                rendererSource,
+                { mode: 0o755 }
+            );
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
             const dispatcherTools = resolveDispatcherTools();
@@ -801,11 +904,12 @@ wait
                 sha256Args: dispatcherTools.sha256Args,
                 findPath: '/usr/bin/find',
                 mktempPath: '/usr/bin/mktemp',
+                shPath: process.platform === 'win32' ? shellPathForTest(process.execPath) : '/bin/sh',
                 warmTimeout: '0.5s',
                 coldTimeout: '1s'
             }), { mode: 0o755 });
 
-            const result = spawnSync(dispatcher, [], {
+            const result = spawnScript(dispatcher, [], {
                 encoding: 'utf8',
                 env: { ...process.env, HOME: home },
                 input: `${JSON.stringify({ session_id: 'tree-session' })}\n`
@@ -818,7 +922,7 @@ wait
                 childAlive = false;
             }
 
-            expect(result.status, result.stderr).toBe(0);
+            expect(result.status, String(result.stderr)).toBe(0);
             expect(result.stdout).toContain('Statusline refreshing');
             expect(childAlive).toBe(false);
         } finally {
@@ -847,10 +951,20 @@ wait
             fs.mkdirSync(home, { recursive: true });
             fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
             writeSupervisorShim(releaseBin);
-            fs.writeFileSync(path.join(releaseBin, 'ccstatusline-render'), `#!/bin/sh
+            const rendererSource = process.platform === 'win32'
+                ? `#!/usr/bin/env bun
+await Bun.stdin.text();
+console.log('LIVE-MACOS');
+`
+                : `#!/bin/sh
 cat >/dev/null
 printf '%s\\n' 'LIVE-MACOS'
-`, { mode: 0o755 });
+`;
+            fs.writeFileSync(
+                path.join(releaseBin, 'ccstatusline-render'),
+                rendererSource,
+                { mode: 0o755 }
+            );
             fs.writeFileSync(fakeShasum, `#!/bin/sh
 printf '%s\\n' "$*" > ${JSON.stringify(hashArguments)}
 [ "$1" = '-a' ] && [ "$2" = '256' ] || exit 64
@@ -865,17 +979,18 @@ exec ${JSON.stringify(nativeHashTools.sha256Path)} ${nativeHashTools.sha256Args.
                 sha256Args: ['-a', '256'],
                 findPath: '/usr/bin/find',
                 mktempPath: '/usr/bin/mktemp',
+                shPath: process.platform === 'win32' ? shellPathForTest(process.execPath) : '/bin/sh',
                 warmTimeout: '1s',
                 coldTimeout: '2s'
             }), { mode: 0o755 });
 
-            const result = spawnSync(dispatcher, [], {
+            const result = spawnScript(dispatcher, [], {
                 encoding: 'utf8',
                 env: { ...process.env, HOME: home },
                 input: `${JSON.stringify({ session_id: 'macos-session' })}\n`
             });
 
-            expect(result.status, result.stderr).toBe(0);
+            expect(result.status, String(result.stderr)).toBe(0);
             expect(result.stdout).toBe('LIVE-MACOS\n');
             expect(fs.readFileSync(hashArguments, 'utf8').trim()).toBe('-a 256');
             expect(fs.readFileSync(dispatcher, 'utf8')).not.toContain('missing-gnu-timeout');
@@ -941,7 +1056,7 @@ describe('HOME projected hook dispatcher', () => {
         home: string,
         runtimeRoot?: string
     ): ReturnType<typeof spawnSync> {
-        return spawnSync(dispatcher, [], {
+        return spawnScript(dispatcher, [], {
             encoding: 'utf8',
             env: {
                 ...process.env,
@@ -962,7 +1077,7 @@ describe('HOME projected hook dispatcher', () => {
                 'releases',
                 fixture.releaseId,
                 'bin',
-                'ccstatusline'
+                runtimeBinaryName()
             );
             fs.mkdirSync(path.dirname(sourceBinary), { recursive: true });
             fs.writeFileSync(sourceBinary, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
@@ -976,10 +1091,13 @@ describe('HOME projected hook dispatcher', () => {
                 fixture.runtimeRoot,
                 'versions',
                 fixture.releaseId,
-                'ccstatusline'
+                runtimeBinaryName()
             ));
             expect(fs.readFileSync(projected, 'utf8')).toBe('#!/bin/sh\nexit 0\n');
-            expect(fs.statSync(projected).mode & 0o777).toBe(0o700);
+            const projectedMode = fs.statSync(projected).mode & 0o777;
+            expect(process.platform === 'win32'
+                ? projectedMode & 0o600
+                : projectedMode).toBe(process.platform === 'win32' ? 0o600 : 0o700);
             expect(fs.readFileSync(
                 path.join(fixture.runtimeRoot, '.active-key'),
                 'utf8'
@@ -1023,15 +1141,23 @@ exit 0
             expect(result.status, String(result.stderr)).toBe(0);
             expect(result.stdout).toBe('');
             expect(calls).toHaveLength(2);
-            expect(calls[0]).toContain(`--internal-supervise 2 ${binary}`);
+            expect(calls[0]).toContain(
+                path.join(
+                    'versions',
+                    fixture.releaseId,
+                    path.basename(binary)
+                ).replaceAll('\\', '/')
+            );
             expect(calls[1]).toContain(
-                `--config ${path.join(
-                    fixture.targetRoot,
+                `--config `
+            );
+            expect(calls[1]).toContain(
+                `${path.join(
                     'releases',
                     fixture.releaseId,
                     'config',
                     'settings.json'
-                )} --activity-hook`
+                ).replaceAll('\\', '/')} --activity-hook`
             );
         } finally {
             fs.rmSync(fixture.root, { recursive: true, force: true });
@@ -1118,7 +1244,11 @@ exit 0
                     overrides.runtimeRoot ?? fixture.runtimeRoot
                 );
 
-                expect(result.status, `${scenario.name}: ${result.stderr}`).toBe(0);
+                const expectedStatus = process.platform === 'win32'
+                    && scenario.name === 'non-executable projected binary'
+                    ? 99
+                    : 0;
+                expect(result.status, `${scenario.name}: ${result.stderr}`).toBe(expectedStatus);
                 expect(result.stdout, scenario.name).toBe('');
                 expect(result.stderr, scenario.name).toBe('');
                 expect(fs.existsSync(fallbackStamp), scenario.name).toBe(false);

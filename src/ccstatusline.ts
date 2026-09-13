@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import chalk from 'chalk';
-import { spawn } from 'node:child_process';
+import {
+    spawn,
+    spawnSync
+} from 'node:child_process';
 
 import { runTUI } from './tui';
 import type { SkillsMetrics } from './types';
@@ -442,7 +445,18 @@ async function handleSupervisedCommand(): Promise<boolean> {
             }
             try {
                 if (process.platform === 'win32') {
-                    child.kill(signal);
+                    const systemRoot = process.env.SystemRoot
+                        ?? process.env.WINDIR
+                        ?? 'C:\\Windows';
+                    const taskkill = `${systemRoot}\\System32\\taskkill.exe`;
+                    const result = spawnSync(
+                        taskkill,
+                        ['/PID', String(child.pid), '/T', '/F'],
+                        { stdio: 'ignore', windowsHide: true }
+                    );
+                    if (result.error || result.status !== 0) {
+                        child.kill(signal);
+                    }
                 } else {
                     process.kill(-child.pid, signal);
                 }
@@ -453,6 +467,10 @@ async function handleSupervisedCommand(): Promise<boolean> {
         const deadlineTimer = setTimeout(() => {
             timedOut = true;
             signalTree('SIGTERM');
+            if (process.platform === 'win32') {
+                finish(124);
+                return;
+            }
             graceTimer = setTimeout(() => {
                 killPhase = true;
                 signalTree('SIGKILL');
@@ -465,7 +483,7 @@ async function handleSupervisedCommand(): Promise<boolean> {
             closed = true;
             if (!timedOut) {
                 finish(1);
-            } else if (killPhase) {
+            } else if (killPhase || process.platform === 'win32') {
                 finish(124);
             }
         });
@@ -473,7 +491,7 @@ async function handleSupervisedCommand(): Promise<boolean> {
             closed = true;
             if (!timedOut) {
                 finish(code ?? 1);
-            } else if (killPhase) {
+            } else if (killPhase || process.platform === 'win32') {
                 finish(124);
             }
         });
