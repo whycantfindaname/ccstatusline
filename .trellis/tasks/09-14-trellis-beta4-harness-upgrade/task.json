@@ -1,0 +1,29 @@
+{
+  "id": "trellis-beta4-harness-upgrade",
+  "name": "trellis-beta4-harness-upgrade",
+  "title": "Upgrade local Trellis harness to beta.4",
+  "description": "Upgrade existing Trellis harness to beta.4 while preserving project customizations and unrelated work.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "jasonliao",
+  "assignee": "jasonliao",
+  "createdAt": "2026-09-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "approved_parent": "/home/notebook/code/personal/S9063923/Code/Q-Anchor/.trellis/tasks/09-14-host-trellis-beta4-upgrade",
+    "execution": "in-place-approved-checkout"
+  }
+}
