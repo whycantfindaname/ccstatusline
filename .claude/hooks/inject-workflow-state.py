@@ -29,9 +29,12 @@ custom agent's ``hooks.userPromptSubmit`` and the IDE ``.kiro.hook``
 ``promptSubmit`` event; its output branch emits a plain-text breadcrumb
 (Kiro adds hook stdout directly to the conversation context).
 
-Silent exit 0 cases (no output):
+Silent exit 0 case (no output):
   - No .trellis/ directory found (not a Trellis project)
-  - task.json malformed or missing status
+
+When a session points at a task directory whose task.json is missing, malformed,
+or missing a usable status, the hook emits a task_error breadcrumb instead of
+misreporting the session as having no active task.
 """
 from __future__ import annotations
 
@@ -157,8 +160,16 @@ def _resolve_active_task(root: Path, input_data: dict):
     return resolve_active_task(root, input_data, platform=_detect_platform(input_data))
 
 
-def get_active_task(root: Path, input_data: dict) -> Optional[tuple[str, str, str]]:
-    """Return (task_id, status, source) from the current active task."""
+def get_active_task(
+    root: Path, input_data: dict
+) -> tuple[str, str, str] | None:
+    """Return active task data, a task-record error, or no task pointer.
+
+    ``(task_id, "task_error", source)`` is distinct from ``None``: a session
+    pointer can exist even when its task record is missing or unreadable, and
+    that state needs a diagnostic breadcrumb rather than the normal ``no_task``
+    prompt.
+    """
     active = _resolve_active_task(root, input_data)
     if not active.task_path:
         return None
@@ -171,16 +182,18 @@ def get_active_task(root: Path, input_data: dict) -> Optional[tuple[str, str, st
 
     task_json = task_dir / "task.json"
     if not task_json.is_file():
-        return None
+        return task_dir.name, "task_error", active.source
     try:
         data = json.loads(task_json.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
-        return None
+        return task_dir.name, "task_error", active.source
+    if not isinstance(data, dict):
+        return task_dir.name, "task_error", active.source
 
     task_id = data.get("id") or task_dir.name
     status = data.get("status", "")
     if not isinstance(status, str) or not status:
-        return None
+        return task_dir.name, "task_error", active.source
     return task_id, status, active.source
 
 
@@ -320,31 +333,22 @@ def _resolve_codex_dispatch_mode(config: dict) -> str:
 
 
 def _codex_mode_banner(config: dict) -> str:
-    """Emit a `<codex-mode>` banner for the additionalContext payload.
+    """Describe context-loading defaults; project rules decide delegation.
 
-    Reads `codex.dispatch_mode` from .trellis/config.yaml; defaults to
-    `auto`, which dispatches Trellis sub-agents using native Codex context
-    injection with a child-side fallback. This does not rely on inherited
-    parent transcripts: `fork_turns` remains caller-controlled, and
-    fresh-history sub-agents still receive their explicit delegated task and
-    inherited session configuration. `inline` is an explicit opt-out; the
-    legacy `sub-agent` value is an alias for `auto`. Invalid explicit values
-    fall back to `inline` without per-turn warnings. The banner makes the
-    active mode explicit to Codex AI per turn, complementing the workflow-state
-    body which is per-status. Mode tells AI which dispatch protocol to follow;
-    workflow-state tells AI what step it's at.
+    ``sub-agent`` remains an alias for ``auto``. Invalid explicit values use
+    ``inline``. Neither mode overrides the project's ownership decisions.
     """
     mode = _resolve_codex_dispatch_mode(config)
     if mode == "auto":
         meaning = (
-            "auto: implement/check work defaults to Trellis sub-agents; native Codex "
-            "context injection is preferred and child-side loading is the fallback. "
-            "The main session still coordinates, clarifies, updates specs, commits, and finishes."
+            "auto: native Codex context injection is available for delegated work, "
+            "with child-side loading as fallback. Follow project workflow and "
+            "routing rules to choose main-session or sub-agent ownership."
         )
     else:
         meaning = (
-            "inline: the main session implements/checks directly; "
-            "do not dispatch implement/check sub-agents."
+            "inline: the main session loads context and implements/checks directly "
+            "by default. Project workflow and routing rules may justify independent delegation."
         )
     return f"<codex-mode>{meaning}</codex-mode>"
 
