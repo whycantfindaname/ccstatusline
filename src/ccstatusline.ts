@@ -5,7 +5,6 @@ import {
     spawnSync
 } from 'node:child_process';
 
-import { runTUI } from './tui';
 import type { SkillsMetrics } from './types';
 import type { RenderContext } from './types/RenderContext';
 import type { ResolvedSessionIdentity } from './types/SessionIdentity';
@@ -192,10 +191,14 @@ async function renderMultipleLines(data: StatusJSON) {
         compactionData,
         sessionIdentity,
         renderDeadline: deadline,
-        terminalWidth: getTerminalWidth(),
+        terminalWidth: getTerminalWidth({
+            sessionId: data.session_id,
+            ttlSeconds: settings.terminalWidthCacheTtlSeconds
+        }),
         isPreview: false,
         minimalist: settings.minimalistMode,
         gitCacheTtlSeconds: settings.gitCacheTtlSeconds,
+        customCommandCacheTtlSeconds: settings.customCommandCacheTtlSeconds,
         gitReviewNeedsChecks: lines.some(line => line.some(item => item.type === 'git-ci-status'))
     };
 
@@ -269,7 +272,6 @@ async function renderMultipleLines(data: StatusJSON) {
         if (newRemaining <= 0) {
             // Remove the entire updatemessage block
             const { updatemessage, ...newSettings } = settings;
-            void updatemessage;
             await saveSettings(newSettings);
         } else {
             // Update the remaining count
@@ -565,9 +567,13 @@ async function main() {
         const settings = await loadSettings();
         if (settings.updatemessage) {
             const { updatemessage, ...newSettings } = settings;
-            void updatemessage;
             await saveSettings(newSettings);
         }
+        // Imported lazily: the TUI pulls in ink/React/yoga-layout, which the
+        // status line render path never touches. Claude Code re-runs this
+        // binary every couple of seconds, so keeping that graph off the
+        // render path is worth the dynamic import here.
+        const { runTUI } = await import('./tui');
         runTUI();
     }
 }

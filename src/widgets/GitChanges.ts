@@ -1,9 +1,11 @@
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
+    CustomKeybind,
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -16,6 +18,15 @@ import {
     NO_GIT_HIDEABLE_STATE,
     isHidden
 } from './shared/hideable';
+import {
+    getSlotSymbol,
+    getSymbolKeybind,
+    renderSymbolSlotsEditor,
+    type SymbolSlot
+} from './shared/symbol-override';
+
+const INSERTIONS_SLOT: SymbolSlot = { id: 'symbolInsertions', label: 'Insertions', defaultSymbol: '+' };
+const DELETIONS_SLOT: SymbolSlot = { id: 'symbolDeletions', label: 'Deletions', defaultSymbol: '-' };
 
 const ZERO_HIDEABLE_STATE: HideableState = { key: 'zero', label: 'when there are no changes' };
 
@@ -44,7 +55,7 @@ export class GitChangesWidget implements Widget {
         const hideNoGit = isHidden(item, NO_GIT_HIDEABLE_STATE.key);
 
         if (context.isPreview) {
-            return '(+42,-10)';
+            return `(${getSlotSymbol(item, INSERTIONS_SLOT)}42,${getSlotSymbol(item, DELETIONS_SLOT)}10)`;
         }
 
         if (!isInsideGitWorkTree(context)) {
@@ -59,7 +70,16 @@ export class GitChangesWidget implements Widget {
             return null;
         }
 
-        return formatGitChanges(changes);
+        const staleMarker = changes.stale ? '~' : '';
+        return `(${getSlotSymbol(item, INSERTIONS_SLOT)}${changes.insertions},${getSlotSymbol(item, DELETIONS_SLOT)}${changes.deletions})${staleMarker}`;
+    }
+
+    getCustomKeybinds(): CustomKeybind[] {
+        return [getSymbolKeybind()];
+    }
+
+    renderEditor(props: WidgetEditorProps) {
+        return renderSymbolSlotsEditor(props, [INSERTIONS_SLOT, DELETIONS_SLOT]);
     }
 
     supportsRawValue(): boolean { return false; }

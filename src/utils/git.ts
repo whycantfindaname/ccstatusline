@@ -41,6 +41,12 @@ interface PersistentGitCache {
 const DEFAULT_GIT_CACHE_TTL_SECONDS = 5;
 const GIT_CACHE_SCHEMA_VERSION = 1 as const;
 
+// Matches the timeout used by every other external CLI call site: a git
+// invocation that blocks (slow network filesystem, hung credential helper)
+// must not freeze the statusline process - the error path below caches null
+// and the widget renders empty instead.
+const GIT_COMMAND_TIMEOUT_MS = 5_000;
+
 // In-process cache keeps cwd in the key; the persistent cache stores cwd once
 // at the file level and keys entries by command.
 const gitCommandCache = new Map<string, GitCacheEntry>();
@@ -349,8 +355,8 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
     try {
         const configuredTimeout = Number.parseInt(process.env.CCSTATUSLINE_GIT_TIMEOUT_MS ?? '', 10);
         const localTimeout = Number.isInteger(configuredTimeout) && configuredTimeout > 0
-            ? Math.min(configuredTimeout, 120)
-            : 60;
+            ? Math.min(configuredTimeout, GIT_COMMAND_TIMEOUT_MS)
+            : GIT_COMMAND_TIMEOUT_MS;
         const timeout = context.renderDeadline?.limit(localTimeout) ?? localTimeout;
         if (timeout === 0) {
             return null;
@@ -359,7 +365,7 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore'],
             env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
-            timeout,
+            timeout: Math.min(timeout, GIT_COMMAND_TIMEOUT_MS),
             windowsHide: true,
             ...(cwd ? { cwd } : {})
         }).trimEnd();

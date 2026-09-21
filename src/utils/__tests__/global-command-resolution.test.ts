@@ -27,7 +27,13 @@ function mockExecFileSync(responses: Record<string, string>) {
 
         return response;
     });
+
+    // Other suites replace child_process wholesale via vi.mock, which is not
+    // file-scoped under the bun runner. When one of those runs first, vi.spyOn
+    // hands back that already-installed mock along with its accumulated call
+    // history, so assertions here would otherwise inspect foreign calls.
     spy.mockClear();
+
     return spy;
 }
 

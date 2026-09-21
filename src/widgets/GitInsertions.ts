@@ -1,9 +1,11 @@
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
+    CustomKeybind,
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -16,8 +18,15 @@ import {
     NO_GIT_HIDEABLE_STATE,
     isHidden
 } from './shared/hideable';
+import {
+    getSlotSymbol,
+    getSymbolKeybind,
+    renderSymbolSlotsEditor,
+    type SymbolSlot
+} from './shared/symbol-override';
 
 const ZERO_HIDEABLE_STATE: HideableState = { key: 'zero', label: 'when the insertion count is zero' };
+const INSERTIONS_SLOT: SymbolSlot = { id: 'symbolInsertions', label: 'Insertions', defaultSymbol: '+' };
 
 export function formatGitInsertions(changes: GitChangeCounts | null): string {
     if (!changes) {
@@ -43,7 +52,7 @@ export class GitInsertionsWidget implements Widget {
         const hideNoGit = isHidden(item, NO_GIT_HIDEABLE_STATE.key);
 
         if (context.isPreview) {
-            return '+42';
+            return `${getSlotSymbol(item, INSERTIONS_SLOT)}42`;
         }
 
         if (!isInsideGitWorkTree(context)) {
@@ -58,7 +67,15 @@ export class GitInsertionsWidget implements Widget {
             return null;
         }
 
-        return formatGitInsertions(changes);
+        return `${getSlotSymbol(item, INSERTIONS_SLOT)}${changes.insertions}${changes.stale ? '~' : ''}`;
+    }
+
+    getCustomKeybinds(): CustomKeybind[] {
+        return [getSymbolKeybind()];
+    }
+
+    renderEditor(props: WidgetEditorProps) {
+        return renderSymbolSlotsEditor(props, [INSERTIONS_SLOT]);
     }
 
     supportsRawValue(): boolean { return false; }
