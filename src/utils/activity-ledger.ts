@@ -247,8 +247,9 @@ export async function applyActivityHook(
                 lastEventAt: timestamp
             };
         } else {
-            const { [agentKey]: removedAgent, ...remainingAgents } = ledger.agents;
-            void removedAgent;
+            const remainingAgents: Record<string, ActivityAgent> = Object.fromEntries(
+                Object.entries(ledger.agents).filter(([key]) => key !== agentKey)
+            );
             ledger.agents = remainingAgents;
         }
         ledger.updatedAt = now.toISOString();
