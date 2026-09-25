@@ -30,3 +30,6 @@
 # Python cache
 **/__pycache__/
 **/*.pyc
+
+# Machine-local hook configuration (see scripts/hooks/linear_sync.py)
+hooks.local.json
