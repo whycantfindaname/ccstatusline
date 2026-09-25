@@ -501,12 +501,14 @@ def cmd_list(args: argparse.Namespace) -> int:
         nonlocal count
         t = all_tasks[dir_name]
 
-        # Apply --mine filter
-        if filter_mine and (t.assignee or "-") != developer:
-            return
-
-        # Apply --status filter
-        if filter_status and t.status != filter_status:
+        # A parent that fails --mine/--status is hidden, but its children
+        # are still checked so a matching child is never lost with it.
+        if (filter_mine and (t.assignee or "-") != developer) or (
+            filter_status and t.status != filter_status
+        ):
+            for child_name in t.children:
+                if child_name in all_tasks:
+                    _print_task(child_name, indent)
             return
 
         relative_path = f"{DIR_WORKFLOW}/{DIR_TASKS}/{dir_name}"

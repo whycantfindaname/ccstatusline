@@ -1469,7 +1469,9 @@ def cmd_archive(args: argparse.Namespace) -> int:
 
         # Auto-commit unless --no-commit
         if not getattr(args, "no_commit", False):
-            if not _auto_commit_archive(dir_name, repo_root, modified_children):
+            if not _auto_commit_archive(
+                dir_name, repo_root, modified_children, archive_dest
+            ):
                 print(
                     colored(
                         "Archive moved on disk, but git auto-commit did not complete. "
@@ -1495,6 +1497,7 @@ def _auto_commit_archive(
     task_name: str,
     repo_root: Path,
     modified_children: list[str] | None = None,
+    archived_task_dir: Path | None = None,
 ) -> bool:
     """Stage Trellis-owned task paths and commit after archive.
 
@@ -1527,7 +1530,10 @@ def _auto_commit_archive(
     source_was_tracked = rc == 0 and bool(tracked_out.strip())
 
     paths = safe_archive_paths_to_add(
-        repo_root, task_name=task_name, modified_children=modified_children
+        repo_root,
+        task_name=task_name,
+        modified_children=modified_children,
+        archived_task_dir=archived_task_dir,
     )
     if not paths:
         print("[OK] No task changes to commit.", file=sys.stderr)
@@ -1569,8 +1575,14 @@ def _auto_commit_archive(
         )
         return not source_was_tracked
 
+    # `source_rel` may only appear in a pathspec while git still knows that
+    # path. `git commit -- <pathspec>` rejects the whole argument list with
+    # "did not match any file(s) known to git" as soon as one entry matches
+    # nothing, and a task that was never committed before archiving has no
+    # source-side deletions staged either (see the `--ignore-unmatch` above).
+    commit_paths = [*paths, source_rel] if source_was_tracked else list(paths)
     rc, _, _ = run_git(
-        ["diff", "--cached", "--quiet", "--", *paths, source_rel],
+        ["diff", "--cached", "--quiet", "--", *commit_paths],
         cwd=repo_root,
     )
     if rc == 0:
@@ -1756,15 +1768,31 @@ def cmd_remove_subtask(args: argparse.Namespace) -> int:
         _report_read_failure(child_json_path, child_reason)
         return 1
 
-    # Remove child from parent's children list
     parent_children = _ensure_children_list(parent_data)
     child_dir_name = child_dir.name
+    recorded_parent = child_data.get("parent")
+    child_points_here = recorded_parent == parent_dir.name
+    # Either side of the link is enough to unlink (repairs a half-written
+    # add-subtask); a child linked only to a different parent is refused.
+    if not child_points_here and child_dir_name not in parent_children:
+        print(
+            colored(
+                f"Error: {child_dir_name} is not a child of {parent_dir.name} "
+                f"(its parent is {recorded_parent or 'none'})",
+                Colors.RED,
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    # Remove child from parent's children list
     if child_dir_name in parent_children:
         parent_children.remove(child_dir_name)
         parent_data["children"] = parent_children
 
-    # Clear parent in child's task.json
-    child_data["parent"] = None
+    # Clear parent in child's task.json only when it points at this parent
+    if child_points_here:
+        child_data["parent"] = None
 
     # Write both — see cmd_add_subtask: an unchecked second write leaves the
     # two sides disagreeing with no error.
