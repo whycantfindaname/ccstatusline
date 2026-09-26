@@ -845,35 +845,50 @@ def _build_workflow_overview(workflow_path: Path) -> str:
 def _load_hook_input() -> dict:
     """Read hook JSON without trusting host runners to close stdin.
 
-    Kiro IDE `runCommand` and similar hook runners can leave stdin open while
-    sending no payload. A plain `json.load(sys.stdin)` then blocks forever.
-    Normal hook runners write the complete JSON payload and close stdin, so the
-    short daemon read preserves that path while failing closed to `{}` for
-    non-piping hosts. The abandoned daemon thread is safe: interpreter
-    shutdown discards daemon threads outright (threading docs), so the
-    process exits without waiting for the pipe.
+    Kiro IDE `runCommand` and similar hook runners can leave stdin open, with
+    or without writing a payload, so waiting for EOF can block forever. A
+    daemon thread forwards stdin chunks as they arrive; the payload is
+    returned as soon as the bytes received so far parse as a JSON object, so
+    an unclosed pipe does not discard a complete payload. Reading stops at
+    EOF or after 0.2 s without new bytes, failing closed to `{}`. The
+    abandoned daemon thread is safe: interpreter shutdown discards daemon
+    threads outright (threading docs), so the process exits without waiting
+    for the pipe.
     """
-    result_queue: "queue.Queue[str | Exception]" = queue.Queue(maxsize=1)
+    chunks: "queue.Queue[bytes]" = queue.Queue()
 
     def _read() -> None:
-        """Read all of stdin onto the queue; never raises."""
+        """Forward stdin chunks onto the queue; b"" marks EOF or an error."""
         try:
-            result_queue.put(sys.stdin.read())
-        except Exception as exc:
-            result_queue.put(exc)
+            fd = sys.stdin.fileno()
+            while True:
+                chunk = os.read(fd, 65536)
+                chunks.put(chunk)
+                if not chunk:
+                    return
+        except Exception:
+            chunks.put(b"")
 
-    reader = threading.Thread(target=_read, daemon=True)
-    reader.start()
-    try:
-        raw = result_queue.get(timeout=0.2)
-    except queue.Empty:
-        return {}
+    threading.Thread(target=_read, daemon=True).start()
+    buf = b""
+    while True:
+        try:
+            chunk = chunks.get(timeout=0.2)
+        except queue.Empty:
+            break
+        if not chunk:
+            break
+        buf += chunk
+        try:
+            data = json.loads(buf.decode("utf-8"))
+        except ValueError:  # includes JSONDecodeError and UnicodeDecodeError
+            continue
+        if isinstance(data, dict):
+            return data
 
-    if isinstance(raw, Exception):
-        return {}
     try:
-        data = json.loads(raw) if raw.strip() else {}
-    except (json.JSONDecodeError, ValueError):
+        data = json.loads(buf.decode("utf-8")) if buf.strip() else {}
+    except ValueError:
         return {}
     return data if isinstance(data, dict) else {}
 
