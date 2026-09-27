@@ -196,7 +196,7 @@
     ".codex/hooks/inject-subagent-context.py": "2d9781a30b9fcf78ee80a8b9dc2072024d38e1417211af97fd68dc4d0933c870",
     ".codex/hooks/inject-workflow-state.py": "50349c8cb02ace96e6cbfd50206971be136aa98f86f7508406ef3197d3a2c96e",
     ".codex/hooks.json": "c16c9af7f6010bf4fabb64fd4bd497201d34583b96c665ea1d5739eed48b3fb5",
-    ".codex/config.toml": "9f2d20e28f0bc9c886312eca3ad3bba41533ef4615aaaafe25e98152302267bb",
+    ".codex/config.toml": "8f69ba913b8ecb9e9ee9a8a1e31a7a8103a351e95fa5eb4879f6554bb53adeb3",
     ".trellis/.gitignore": "6fb87bc50e5ec28887f9ef9c64edf13b4cf6da881185be592bd83914ded954e4"
   }
 }
