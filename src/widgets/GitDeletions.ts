@@ -2,8 +2,10 @@ import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
+    HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -13,11 +15,18 @@ import {
 } from '../utils/git';
 
 import {
-    getHideNoGitKeybinds,
-    getHideNoGitModifierText,
-    handleToggleNoGitAction,
-    isHideNoGitEnabled
-} from './shared/git-no-git';
+    NO_GIT_HIDEABLE_STATE,
+    isHidden
+} from './shared/hideable';
+import {
+    getSlotSymbol,
+    getSymbolKeybind,
+    renderSymbolSlotsEditor,
+    type SymbolSlot
+} from './shared/symbol-override';
+
+const ZERO_HIDEABLE_STATE: HideableState = { key: 'zero', label: 'when the deletion count is zero' };
+const DELETIONS_SLOT: SymbolSlot = { id: 'symbolDeletions', label: 'Deletions', defaultSymbol: '-' };
 
 export function formatGitDeletions(changes: GitChangeCounts | null): string {
     if (!changes) {
@@ -32,21 +41,18 @@ export class GitDeletionsWidget implements Widget {
     getDisplayName(): string { return 'Git Deletions'; }
     getCategory(): string { return 'Git'; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        return {
-            displayText: this.getDisplayName(),
-            modifierText: getHideNoGitModifierText(item)
-        };
+        return { displayText: this.getDisplayName() };
     }
 
-    handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        return handleToggleNoGitAction(action, item);
+    getHideableStates(): HideableState[] {
+        return [NO_GIT_HIDEABLE_STATE, ZERO_HIDEABLE_STATE];
     }
 
     render(item: WidgetItem, context: RenderContext, _settings: Settings): string | null {
-        const hideNoGit = isHideNoGitEnabled(item);
+        const hideNoGit = isHidden(item, NO_GIT_HIDEABLE_STATE.key);
 
         if (context.isPreview) {
-            return '-10';
+            return `${getSlotSymbol(item, DELETIONS_SLOT)}10`;
         }
 
         if (!isInsideGitWorkTree(context)) {
@@ -54,11 +60,22 @@ export class GitDeletionsWidget implements Widget {
         }
 
         const changes = getGitChangeCounts(context);
-        return formatGitDeletions(changes);
+        if (!changes) {
+            return formatGitDeletions(null);
+        }
+        if (changes.deletions === 0 && isHidden(item, ZERO_HIDEABLE_STATE.key)) {
+            return null;
+        }
+
+        return `${getSlotSymbol(item, DELETIONS_SLOT)}${changes.deletions}${changes.stale ? '~' : ''}`;
     }
 
     getCustomKeybinds(): CustomKeybind[] {
-        return getHideNoGitKeybinds();
+        return [getSymbolKeybind()];
+    }
+
+    renderEditor(props: WidgetEditorProps) {
+        return renderSymbolSlotsEditor(props, [DELETIONS_SLOT]);
     }
 
     supportsRawValue(): boolean { return false; }

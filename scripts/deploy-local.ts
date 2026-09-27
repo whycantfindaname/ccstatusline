@@ -6,8 +6,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { SettingsSchema } from '../src/types/Settings';
+import {
+    CURRENT_VERSION,
+    SettingsSchema
+} from '../src/types/Settings';
 import { getActiveHookDefs } from '../src/utils/hooks';
+import { migrateConfig } from '../src/utils/migrations';
 import { getSkillsFilePath } from '../src/utils/skills';
 
 import {
@@ -19,6 +23,7 @@ import {
     parseCCSwitchCommonConfig,
     parseProviderRegistry,
     restoreManagedSettings as restoreManagedSettingsPure,
+    runtimeBinaryName,
     type JsonObject
 } from './deploy-utils';
 
@@ -104,6 +109,23 @@ function commandEnvironment(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEn
     };
 }
 
+function shellPath(value: string): string {
+    return process.platform === 'win32' ? value.replaceAll('\\', '/') : value;
+}
+
+function validationEnvironment(): NodeJS.ProcessEnv {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-validation-home-'));
+    const configRoot = path.join(home, '.claude');
+    fs.mkdirSync(configRoot, { recursive: true });
+    return commandEnvironment({
+        CLAUDE_CONFIG_DIR: configRoot,
+        HOME: home,
+        HOMEDRIVE: '',
+        HOMEPATH: '',
+        USERPROFILE: home
+    });
+}
+
 function run(
     command: string,
     args: string[],
@@ -115,7 +137,18 @@ function run(
         trimOutput?: boolean;
     } = {}
 ): string {
-    const result = spawnSync(command, args, {
+    let executable = command === 'bun' && Boolean(process.versions.bun)
+        ? process.execPath
+        : command;
+    let executableArgs = args;
+    if (process.platform === 'win32') {
+        const interpreter = resolveWindowsScriptInterpreter(command);
+        if (interpreter) {
+            executable = interpreter.executable;
+            executableArgs = [...interpreter.args, ...args];
+        }
+    }
+    const result = spawnSync(executable, executableArgs, {
         cwd: options.cwd ?? REPO_ROOT,
         encoding: 'utf8',
         env: options.env ?? commandEnvironment(),
@@ -125,12 +158,13 @@ function run(
             : 'inherit'
     });
     if (result.status !== 0) {
+        const spawnError = result.error instanceof Error ? `: ${result.error.message}` : '';
         const diagnostic = options.capture
             ? [result.stderr, result.stdout]
                 .filter(Boolean)
                 .join('\n')
-                .trim() || `${command} exited ${result.status}`
-            : `${command} exited ${result.status}`;
+                .trim() || `${command} exited ${result.status}${spawnError}`
+            : `${command} exited ${result.status}${spawnError}`;
         throw new Error(diagnostic);
     }
     if (!options.capture) {
@@ -139,30 +173,102 @@ function run(
     return options.trimOutput === false ? result.stdout : result.stdout.trim();
 }
 
+function resolveWindowsScriptInterpreter(
+    command: string
+): { executable: string; args: string[] } | null {
+    let firstLine: string;
+    try {
+        firstLine = fs.readFileSync(command, { encoding: 'utf8' }).split(/\r?\n/, 1)[0] ?? '';
+    } catch {
+        return null;
+    }
+    const match = /^#!\s*(\S+)(?:\s+(.*))?$/.exec(firstLine);
+    if (!match) {
+        return null;
+    }
+    const interpreterPath = match[1]?.replaceAll('\\', '/') ?? '';
+    const interpreterName = path.posix.basename(interpreterPath).toLowerCase();
+    const interpreterArgs = match[2]?.trim().split(/\s+/).filter(Boolean) ?? [];
+    let commandName = interpreterName;
+    let shebangArgs = interpreterArgs;
+    if (interpreterName === 'env') {
+        if (shebangArgs[0] === '-S') {
+            shebangArgs = shebangArgs.slice(1);
+        }
+        commandName = shebangArgs.shift()?.toLowerCase() ?? '';
+    }
+    if (commandName !== 'sh' && commandName !== 'bash' && commandName !== 'bun') {
+        return null;
+    }
+    const resolvedExecutable = commandName === 'bun' && Boolean(process.versions.bun)
+        ? process.execPath
+        : commandPath(commandName);
+    return {
+        args: [...shebangArgs, command],
+        executable: resolvedExecutable
+    };
+}
+
+function windowsSystemCommand(command: string): string {
+    const systemRoot = process.env.SystemRoot ?? process.env.WINDIR ?? 'C:\\Windows';
+    const absolute = path.join(systemRoot, 'System32', command);
+    return fs.existsSync(absolute) ? absolute : command;
+}
+
+export function selectFirstCommandPath(output: string): string | null {
+    return output
+        .split(/\r?\n/)
+        .map(line => line.trim())
+        .filter(Boolean)
+        .find((candidate) => {
+            try {
+                return fs.statSync(candidate).isFile();
+            } catch {
+                return false;
+            }
+        }) ?? null;
+}
+
 function commandPathOptional(command: string): string | null {
     if (command.includes(path.sep)) {
         try {
-            fs.accessSync(path.resolve(command), fs.constants.X_OK);
-            return path.resolve(command);
+            const resolved = path.resolve(command);
+            if (!fs.statSync(resolved).isFile()) {
+                return null;
+            }
+            if (process.platform !== 'win32') {
+                fs.accessSync(resolved, fs.constants.X_OK);
+            }
+            return resolved;
         } catch {
             return null;
         }
     }
-    const result = spawnSync(
-        '/bin/sh',
-        ['-c', 'command -v "$1"', 'resolve-command', command],
-        {
+    const result = process.platform === 'win32'
+        ? spawnSync(windowsSystemCommand('where.exe'), [command], {
             encoding: 'utf8',
             env: commandEnvironment(),
             stdio: ['ignore', 'pipe', 'ignore']
-        }
-    );
-    return result.status === 0 && result.stdout.trim().length > 0
-        ? result.stdout.trim()
-        : null;
+        })
+        : spawnSync(
+            '/bin/sh',
+            ['-c', 'command -v "$1"', 'resolve-command', command],
+            {
+                encoding: 'utf8',
+                env: commandEnvironment(),
+                stdio: ['ignore', 'pipe', 'ignore']
+            }
+        );
+    if (result.status !== 0) {
+        return null;
+    }
+    return selectFirstCommandPath(result.stdout);
 }
 
 function commandPath(command: string): string {
+    if (command === 'bun' && process.versions.bun) {
+        return process.execPath;
+    }
     const resolved = commandPathOptional(command);
     if (!resolved) {
         throw new Error(`Required command is unavailable: ${command}`);
@@ -347,6 +453,21 @@ function activeReleasePath(paths: DeploymentPaths): string {
     return path.join(paths.targetRoot, 'active-release');
 }
 
+function localRuntimePath(root: string): string {
+    const basePath = path.join(root, 'dist', 'ccstatusline-local');
+    const windowsPath = `${basePath}.exe`;
+    return process.platform === 'win32' && fs.existsSync(windowsPath)
+        ? windowsPath
+        : basePath;
+}
+
+function readReleaseSettings(repoRoot: string): Buffer {
+    const sourcePath = path.join(repoRoot, 'config', 'statusline', 'settings.json');
+    const source = JSON.parse(fs.readFileSync(sourcePath, 'utf8')) as unknown;
+    const migrated = migrateConfig(source, CURRENT_VERSION);
+    return Buffer.from(`${JSON.stringify(migrated, null, 2)}\n`);
+}
+
 function previousReleasePath(paths: DeploymentPaths): string {
     return path.join(paths.targetRoot, 'previous-release');
 }
@@ -392,19 +513,23 @@ function restoreManagedSettings(
     return restoreManagedSettingsPure(current, backup, managedPatch(paths));
 }
 
-function releaseWrapper(paths: DeploymentPaths, hook: boolean): string {
+export function releaseWrapper(paths: DeploymentPaths, hook: boolean): string {
     const extraArg = hook ? ' --activity-hook' : '';
-    const releasePrefix = shellQuote(`${paths.targetRoot}/releases/`);
+    const releasePrefix = shellQuote(`${shellPath(paths.targetRoot)}/releases/`);
     return `#!/bin/sh
 set -eu
 : "\${CCSTATUSLINE_RELEASE_ROOT:?missing pinned release root}"
-release_root=$CCSTATUSLINE_RELEASE_ROOT
+release_root=$(printf '%s\\n' "$CCSTATUSLINE_RELEASE_ROOT" | sed 's#\\\\#/#g')
 case "$release_root" in
   ${releasePrefix}*) ;;
   *) exit 1 ;;
 esac
 export CCSTATUSLINE_CONFIG_DIR="$release_root/config"
-exec "$release_root/bin/ccstatusline" --config "$release_root/config/settings.json"${extraArg} "$@"
+runtime_binary="$release_root/bin/${runtimeBinaryName()}"
+if [ ! -x "$runtime_binary" ]; then
+  runtime_binary="$release_root/bin/ccstatusline"
+fi
+exec "$runtime_binary" --config "$release_root/config/settings.json"${extraArg} "$@"
 `;
 }
 
@@ -435,15 +560,16 @@ export function stableDispatcher(
             ...tools
         });
     }
-    const activePath = shellQuote(activeReleasePath(paths));
-    const releasePrefix = shellQuote(`${paths.targetRoot}/releases/`);
-    const sedPath = shellQuote(tools.sedPath);
+    const activePath = shellQuote(shellPath(activeReleasePath(paths)));
+    const releasePrefix = shellQuote(shellPath(`${paths.targetRoot}/releases/`));
+    const sedPath = shellQuote(shellPath(tools.sedPath));
     return `#!/bin/sh
 set -u
 [ -n "\${HOME:-}" ] || exit 0
 runtime_root="\${JASON_CCSTATUSLINE_RUNTIME_ROOT:-\${HOME}/.local/share/ccstatusline}"
+runtime_root=$(printf '%s\\n' "$runtime_root" | ${sedPath} 's#\\\\#/#g')
 case "$runtime_root" in
-  /*) ;;
+  /*|[A-Za-z]:/*) ;;
   *) exit 0 ;;
 esac
 release_id=$(${sedPath} -n '1p' ${activePath}) || exit 0
@@ -454,11 +580,15 @@ esac
 [ -f "$runtime_root/.active-key" ] || exit 0
 active_key=$(${sedPath} -n '1p' "$runtime_root/.active-key") || exit 0
 [ "$active_key" = "$release_id" ] || exit 0
-runtime_binary="$runtime_root/versions/$release_id/ccstatusline"
+runtime_binary="$runtime_root/versions/$release_id/${runtimeBinaryName()}"
+if [ ! -x "$runtime_binary" ]; then
+  runtime_binary="$runtime_root/versions/$release_id/ccstatusline"
+fi
 [ -x "$runtime_binary" ] || exit 0
-release_root=$(CDPATH= cd -- ${releasePrefix}"$release_id" && pwd -P) || exit 0
+releases_root=$(CDPATH= cd -- ${releasePrefix} && pwd -P) || exit 0
+release_root=$(CDPATH= cd -- "$releases_root/$release_id" && pwd -P) || exit 0
 case "$release_root" in
-  ${releasePrefix}*) ;;
+  "$releases_root"/*) ;;
   *) exit 0 ;;
 esac
 config_path="$release_root/config/settings.json"
@@ -477,8 +607,8 @@ esac
 function buildReleaseFiles(paths: DeploymentPaths, providers: JsonObject): ReleaseFile[] {
     return [
         {
-            relativePath: 'bin/ccstatusline',
-            content: fs.readFileSync(path.join(paths.validationRoot, 'dist', 'ccstatusline-local')),
+            relativePath: `bin/${runtimeBinaryName()}`,
+            content: fs.readFileSync(localRuntimePath(paths.validationRoot)),
             mode: 0o755
         },
         {
@@ -493,9 +623,7 @@ function buildReleaseFiles(paths: DeploymentPaths, providers: JsonObject): Relea
         },
         {
             relativePath: 'config/settings.json',
-            content: fs.readFileSync(
-                path.join(paths.repoRoot, 'config', 'statusline', 'settings.json')
-            ),
+            content: readReleaseSettings(paths.repoRoot),
             mode: 0o644
         },
         {
@@ -680,15 +808,18 @@ export async function projectActiveRuntime(
     if (!releaseId) {
         throw new Error(`Active release pointer is missing: ${activeReleaseFile}`);
     }
-    const source = path.join(
+    const sourceBase = path.join(
         path.dirname(activeReleaseFile),
         'releases',
         releaseId,
         'bin',
         'ccstatusline'
     );
+    const source = process.platform === 'win32' && fs.existsSync(`${sourceBase}.exe`)
+        ? `${sourceBase}.exe`
+        : sourceBase;
     const versionRoot = path.join(runtimeRoot, 'versions', releaseId);
-    const target = path.join(versionRoot, 'ccstatusline');
+    const target = path.join(versionRoot, runtimeBinaryName());
     await fs.promises.mkdir(versionRoot, { recursive: true, mode: 0o700 });
     await fs.promises.chmod(versionRoot, 0o700);
     await copyFileAtomic(source, target, 0o700);
@@ -994,9 +1125,10 @@ function semanticEqual(left: unknown, right: unknown): boolean {
 }
 
 function validateManagedPatchPaths(paths: DeploymentPaths): void {
-    const serialized = JSON.stringify(managedPatch(paths));
-    if (!serialized.includes(`${paths.targetRoot}/bin/ccstatusline`)
-        || !serialized.includes(`${paths.targetRoot}/bin/ccstatusline-hook`)
+    const serialized = JSON.stringify(managedPatch(paths)).replaceAll('\\\\', '/');
+    const targetRoot = paths.targetRoot.replaceAll('\\', '/');
+    if (!serialized.includes(`${targetRoot}/bin/ccstatusline`)
+        || !serialized.includes(`${targetRoot}/bin/ccstatusline-hook`)
         || serialized.includes('/ccswitch-statusline')) {
         throw new Error('Managed settings patch contains an invalid statusline command');
     }
@@ -1087,7 +1219,7 @@ function verifyStatuslineSmoke(
                 CCSTATUSLINE_WIDTH: '240',
                 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: '80',
                 CLAUDE_CODE_AUTO_COMPACT_WINDOW: '64000',
-                ...(releaseRoot ? { CCSTATUSLINE_RELEASE_ROOT: releaseRoot } : {})
+                ...(releaseRoot ? { CCSTATUSLINE_RELEASE_ROOT: shellPath(releaseRoot) } : {})
             }),
             input: `${JSON.stringify(payload)}\n`,
             trimOutput: false
@@ -1129,8 +1261,12 @@ function verifyStatuslineSmoke(
                 `${cacheKey}.ansi`
             );
             try {
-                if (fs.readFileSync(cachePath, 'utf8') !== output
-                    || (fs.statSync(cachePath).mode & 0o777) !== 0o600) {
+                const cacheOutput = fs.readFileSync(cachePath, 'utf8');
+                const cacheMode = fs.statSync(cachePath).mode & 0o777;
+                const privateCacheMode = process.platform === 'win32'
+                    ? cacheMode === 0o600 || cacheMode === 0o666
+                    : cacheMode === 0o600;
+                if (cacheOutput !== output || !privateCacheMode) {
                     throw new Error(
                         'Stable dispatcher last-known-good cache did not match smoke output'
                     );
@@ -1158,6 +1294,18 @@ function awaitableUnlink(filePath: string): void {
 function verifyHookSmoke(command: string, cwd: string): void {
     const sessionId = `ccstatusline-deployment-${process.pid}`;
     const skillsFile = getSkillsFilePath(sessionId);
+    let executable = command;
+    let executableArgs: string[] = [];
+    if (process.platform === 'win32') {
+        try {
+            if (fs.readFileSync(command, 'utf8').startsWith('#!/bin/sh')) {
+                executable = commandPath('sh');
+                executableArgs = [command];
+            }
+        } catch {
+            // Preserve the direct command for the diagnostic below.
+        }
+    }
     const events = [
         { hook_event_name: 'SessionStart', session_id: sessionId },
         {
@@ -1170,7 +1318,7 @@ function verifyHookSmoke(command: string, cwd: string): void {
     ];
     try {
         for (const event of events) {
-            const result = spawnSync(command, [], {
+            const result = spawnSync(executable, executableArgs, {
                 cwd,
                 encoding: 'utf8',
                 env: commandEnvironment(),
@@ -1226,16 +1374,26 @@ async function applyDeployment(options: CliOptions): Promise<void> {
         console.warn(ccSwitchCommon.warning);
     }
 
-    run('bun', ['run', 'lint'], { cwd: paths.validationRoot, capture: true });
+    const validationEnv = validationEnvironment();
+    run('bun', ['run', 'lint'], {
+        cwd: paths.validationRoot,
+        capture: true,
+        env: validationEnv
+    });
     run('bun', ['test', '--timeout=7000'], {
         cwd: paths.validationRoot,
-        capture: true
+        capture: true,
+        env: validationEnv
     });
-    run('bun', ['run', 'build'], { cwd: paths.validationRoot, capture: true });
+    run('bun', ['run', 'build'], {
+        cwd: paths.validationRoot,
+        capture: true,
+        env: validationEnv
+    });
     run(
         'bun',
         ['run', 'build:local-runtime'],
-        { cwd: paths.validationRoot, capture: true }
+        { cwd: paths.validationRoot, capture: true, env: validationEnv }
     );
     console.log('validation ok: lint, tests, distribution build, local runtime build');
 

@@ -8,7 +8,7 @@ import type {
 import { formatTokens } from '../utils/renderer';
 
 function tokenValue(value: number | undefined): string {
-    return value === undefined ? 'unknown' : formatTokens(value, 0);
+    return value === undefined ? 'unknown' : formatTokens(value, {}, 0);
 }
 
 export class FullContextWindowWidget implements Widget {

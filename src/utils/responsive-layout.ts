@@ -46,7 +46,7 @@ function renderMode(
     context: RenderContext,
     settings: Settings
 ): string {
-    if (mode === 'hidden' || widget.hide) {
+    if (mode === 'hidden') {
         return '';
     }
     const widgetImpl = getWidget(widget.type);

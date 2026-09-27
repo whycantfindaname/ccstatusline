@@ -1,13 +1,11 @@
 #!/usr/bin/env node
 import chalk from 'chalk';
-import { spawn } from 'node:child_process';
+import {
+    spawn,
+    spawnSync
+} from 'node:child_process';
 
-import { runTUI } from './tui';
-import type {
-    SkillsMetrics,
-    SpeedMetrics,
-    TokenMetrics
-} from './types';
+import type { SkillsMetrics } from './types';
 import type { RenderContext } from './types/RenderContext';
 import type { ResolvedSessionIdentity } from './types/SessionIdentity';
 import type { StatusJSON } from './types/StatusJSON';
@@ -17,11 +15,9 @@ import {
     reconcileActivityTasks
 } from './utils/activity-ledger';
 import { getVisibleText } from './utils/ansi';
+import { prefetchClaudeStatusIfNeeded } from './utils/claude-service-status';
 import { updateColorMap } from './utils/colors';
-import {
-    ZERO_COMPACTION_STATS,
-    getCompactionStats
-} from './utils/compaction';
+import { ZERO_COMPACTION_STATS } from './utils/compaction';
 import {
     getConfigLoadError,
     initConfigPath,
@@ -37,11 +33,7 @@ import {
     refreshGitReviewCacheFromCli
 } from './utils/git-review-cache';
 import { handleHookInput } from './utils/hook-handler';
-import {
-    getSessionDuration,
-    getSpeedMetricsCollection,
-    getTokenMetrics
-} from './utils/jsonl';
+import { getTranscriptAnalysis } from './utils/jsonl';
 import { advanceGlobalPowerlineThemeIndex } from './utils/powerline-theme-index';
 import { RenderDeadline } from './utils/render-deadline';
 import {
@@ -130,6 +122,11 @@ async function renderMultipleLines(data: StatusJSON) {
 
     const speedWidgetTypes = new Set(['output-speed', 'input-speed', 'total-speed']);
     const hasSpeedItems = lines.some(line => line.some(item => speedWidgetTypes.has(item.type)));
+    const hasCompactionWidget = lines.some(line => line.some(item => item.type === 'compaction-counter'));
+    const hasThinkingEffortWidget = lines.some(line => line.some(item => item.type === 'thinking-effort'));
+    const hasSessionNameWidget = lines.some(line => line.some(item => item.type === 'session-name'));
+    const needsTranscriptThinkingEffort = hasThinkingEffortWidget
+        && (!data.effort || !('level' in data.effort));
     const requestedSpeedWindows = new Set<number>();
     for (const line of lines) {
         for (const item of line) {
@@ -139,47 +136,31 @@ async function renderMultipleLines(data: StatusJSON) {
         }
     }
 
-    const tokenMetricWidgetTypes = new Set([
-        'tokens-input',
-        'tokens-output',
-        'tokens-cached',
-        'tokens-total',
-        'cache-hit-rate',
-        'cache-read',
-        'cache-write',
-        'context-length',
-        'context-percentage',
-        'context-percentage-usable',
-        'context-bar'
-    ]);
-    const needsTokenMetrics = lines.some(line => line.some(item => tokenMetricWidgetTypes.has(item.type)));
-
-    let tokenMetrics: TokenMetrics | null = null;
-    if (needsTokenMetrics && data.transcript_path && !deadline.expired()) {
-        tokenMetrics = await getTokenMetrics(data.transcript_path);
-    }
-
     const sessionIdentity = await resolveSessionIdentity(data, { deadline });
-
-    let sessionDuration: string | null = null;
-    if (hasSessionClock && !hasSessionDurationInStatusJson(data) && data.transcript_path) {
-        sessionDuration = formatResolvedSessionDuration(sessionIdentity)
-            ?? (deadline.expired() ? null : await getSessionDuration(data.transcript_path));
-    }
-
-    const usageData = await prefetchUsageDataIfNeeded(lines, data);
-
-    let speedMetrics: SpeedMetrics | null = null;
-    let windowedSpeedMetrics: Record<string, SpeedMetrics> | null = null;
-    if (hasSpeedItems && data.transcript_path) {
-        const speedMetricsCollection = await getSpeedMetricsCollection(data.transcript_path, {
+    const transcriptAnalysisPromise = data.transcript_path
+        ? getTranscriptAnalysis(data.transcript_path, {
+            includeSessionDuration: hasSessionClock && !hasSessionDurationInStatusJson(data),
+            includeSpeedMetrics: hasSpeedItems,
             includeSubagents: true,
-            windowSeconds: Array.from(requestedSpeedWindows)
-        });
+            speedWindowSeconds: Array.from(requestedSpeedWindows),
+            includeCompactionStats: hasCompactionWidget,
+            includeThinkingEffort: needsTranscriptThinkingEffort,
+            includeSessionName: hasSessionNameWidget
+        })
+        : Promise.resolve(null);
+    const [transcriptAnalysis, usageData, claudeStatusData] = await Promise.all([
+        transcriptAnalysisPromise,
+        prefetchUsageDataIfNeeded(lines, data),
+        prefetchClaudeStatusIfNeeded(lines)
+    ]);
 
-        speedMetrics = speedMetricsCollection.sessionAverage;
-        windowedSpeedMetrics = speedMetricsCollection.windowed;
-    }
+    const tokenMetrics = transcriptAnalysis?.tokenMetrics ?? null;
+    const sessionDuration = transcriptAnalysis?.sessionDuration
+        ?? (hasSessionClock && !hasSessionDurationInStatusJson(data)
+            ? formatResolvedSessionDuration(sessionIdentity)
+            : null);
+    const speedMetrics = transcriptAnalysis?.speedMetricsCollection?.sessionAverage ?? null;
+    const windowedSpeedMetrics = transcriptAnalysis?.speedMetricsCollection?.windowed ?? null;
 
     let skillsMetrics: SkillsMetrics | null = null;
     const hasSkillsWidget = lines.some(line => line.some(item => item.type === 'skills'));
@@ -187,10 +168,8 @@ async function renderMultipleLines(data: StatusJSON) {
         skillsMetrics = getSkillsMetrics(data.session_id);
     }
 
-    // Compaction stats — parse compact_boundary markers in this session's transcript
-    const hasCompactionWidget = lines.some(line => line.some(item => item.type === 'compaction-counter'));
     const compactionData = hasCompactionWidget
-        ? (data.transcript_path ? await getCompactionStats(data.transcript_path) : ZERO_COMPACTION_STATS)
+        ? (transcriptAnalysis?.compactionData ?? ZERO_COMPACTION_STATS)
         : null;
 
     // Create render context
@@ -200,15 +179,26 @@ async function renderMultipleLines(data: StatusJSON) {
         speedMetrics,
         windowedSpeedMetrics,
         usageData,
+        claudeStatusData,
         sessionDuration,
+        transcriptSessionName: hasSessionNameWidget
+            ? (transcriptAnalysis?.sessionName ?? null)
+            : undefined,
+        transcriptThinkingEffort: needsTranscriptThinkingEffort
+            ? (transcriptAnalysis?.thinkingEffort ?? null)
+            : undefined,
         skillsMetrics,
         compactionData,
         sessionIdentity,
         renderDeadline: deadline,
-        terminalWidth: getTerminalWidth(),
+        terminalWidth: getTerminalWidth({
+            sessionId: data.session_id,
+            ttlSeconds: settings.terminalWidthCacheTtlSeconds
+        }),
         isPreview: false,
         minimalist: settings.minimalistMode,
         gitCacheTtlSeconds: settings.gitCacheTtlSeconds,
+        customCommandCacheTtlSeconds: settings.customCommandCacheTtlSeconds,
         gitReviewNeedsChecks: lines.some(line => line.some(item => item.type === 'git-ci-status'))
     };
 
@@ -282,7 +272,6 @@ async function renderMultipleLines(data: StatusJSON) {
         if (newRemaining <= 0) {
             // Remove the entire updatemessage block
             const { updatemessage, ...newSettings } = settings;
-            void updatemessage;
             await saveSettings(newSettings);
         } else {
             // Update the remaining count
@@ -458,7 +447,18 @@ async function handleSupervisedCommand(): Promise<boolean> {
             }
             try {
                 if (process.platform === 'win32') {
-                    child.kill(signal);
+                    const systemRoot = process.env.SystemRoot
+                        ?? process.env.WINDIR
+                        ?? 'C:\\Windows';
+                    const taskkill = `${systemRoot}\\System32\\taskkill.exe`;
+                    const result = spawnSync(
+                        taskkill,
+                        ['/PID', String(child.pid), '/T', '/F'],
+                        { stdio: 'ignore', windowsHide: true }
+                    );
+                    if (result.error || result.status !== 0) {
+                        child.kill(signal);
+                    }
                 } else {
                     process.kill(-child.pid, signal);
                 }
@@ -469,6 +469,10 @@ async function handleSupervisedCommand(): Promise<boolean> {
         const deadlineTimer = setTimeout(() => {
             timedOut = true;
             signalTree('SIGTERM');
+            if (process.platform === 'win32') {
+                finish(124);
+                return;
+            }
             graceTimer = setTimeout(() => {
                 killPhase = true;
                 signalTree('SIGKILL');
@@ -481,7 +485,7 @@ async function handleSupervisedCommand(): Promise<boolean> {
             closed = true;
             if (!timedOut) {
                 finish(1);
-            } else if (killPhase) {
+            } else if (killPhase || process.platform === 'win32') {
                 finish(124);
             }
         });
@@ -489,7 +493,7 @@ async function handleSupervisedCommand(): Promise<boolean> {
             closed = true;
             if (!timedOut) {
                 finish(code ?? 1);
-            } else if (killPhase) {
+            } else if (killPhase || process.platform === 'win32') {
                 finish(124);
             }
         });
@@ -563,9 +567,13 @@ async function main() {
         const settings = await loadSettings();
         if (settings.updatemessage) {
             const { updatemessage, ...newSettings } = settings;
-            void updatemessage;
             await saveSettings(newSettings);
         }
+        // Imported lazily: the TUI pulls in ink/React/yoga-layout, which the
+        // status line render path never touches. Claude Code re-runs this
+        // binary every couple of seconds, so keeping that graph off the
+        // render path is worth the dynamic import here.
+        const { runTUI } = await import('./tui');
         runTUI();
     }
 }

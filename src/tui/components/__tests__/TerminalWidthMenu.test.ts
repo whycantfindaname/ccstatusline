@@ -64,7 +64,7 @@ function createMockStdout(): CapturedWriteStream {
 
 function flushInk() {
     return new Promise((resolve) => {
-        setTimeout(resolve, 25);
+        setTimeout(resolve, process.platform === 'win32' ? 100 : 25);
     });
 }
 

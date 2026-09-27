@@ -18,6 +18,7 @@ import { GitBranchWidget } from '../GitBranch';
 vi.mock('child_process', () => ({
     execSync: vi.fn(),
     execFileSync: vi.fn(),
+    spawn: vi.fn(),
     spawnSync: vi.fn()
 }));
 
@@ -44,7 +45,7 @@ function render(options: {
     };
     const metadata = {
         ...options.metadata,
-        ...(options.hideNoGit ? { hideNoGit: 'true' } : {}),
+        ...(options.hideNoGit ? { hide: 'no-git' } : {}),
         ...(options.linkToRepo ? { linkToRepo: 'true' } : {})
     };
     const item: WidgetItem = {
@@ -61,7 +62,7 @@ function render(options: {
 describe('GitBranchWidget', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        clearGitCache();
+        clearGitCache(true);
     });
 
     it('should render preview', () => {
@@ -244,12 +245,12 @@ describe('GitBranchWidget', () => {
             const item: WidgetItem = {
                 id: 'git-branch',
                 type: 'git-branch',
-                metadata: { linkToRepo: 'true', linkToGitHub: 'true', hideNoGit: 'true' }
+                metadata: { linkToRepo: 'true', linkToGitHub: 'true', hide: 'no-git' }
             };
 
             const toggled = widget.handleEditorAction('toggle-link', item);
 
-            expect(toggled?.metadata).toEqual({ hideNoGit: 'true' });
+            expect(toggled?.metadata).toEqual({ hide: 'no-git' });
         });
     });
 });
