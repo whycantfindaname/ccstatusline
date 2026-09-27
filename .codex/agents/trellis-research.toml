@@ -76,3 +76,10 @@ If the user asks you to edit code, decline and tell them to spawn the
 ...
 ```
 """
+
+# Research is a leaf even when the parent explicitly enables Multi-Agent V2.
+[features]
+multi_agent_v2 = false
+
+[agents]
+enabled = false
