@@ -870,6 +870,35 @@ describe('last-known-good statusline dispatcher', () => {
         }
     });
 
+    it.skipIf(process.platform !== 'win32')('uses POSIX find for cache retention on Windows', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-find-retention-'));
+        try {
+            const stale = path.join(root, 'stale.ansi');
+            const fresh = path.join(root, 'fresh.ansi');
+            const unrelated = path.join(root, 'stale.txt');
+            for (const file of [stale, fresh, unrelated]) {
+                fs.writeFileSync(file, 'SYNTHETIC\n');
+            }
+            const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+            fs.utimesSync(stale, old, old);
+            fs.utimesSync(unrelated, old, old);
+            const tools = resolveDispatcherTools();
+            const nativeFind = path.join(process.env.SystemRoot ?? 'C:\\Windows',
+                'System32', 'find.exe');
+            expect(path.resolve(tools.findPath).toLowerCase())
+                .not.toBe(path.resolve(nativeFind).toLowerCase());
+            const result = spawnSync(tools.findPath, [shellPathForTest(root),
+                '-mindepth', '1', '-maxdepth', '1', '-type', 'f', '-name', '*.ansi',
+                '-mmin', '+10080', '-delete'], { encoding: 'utf8' });
+            expect(result.status, result.stderr).toBe(0);
+            expect(fs.existsSync(stale)).toBe(false);
+            expect(fs.existsSync(fresh)).toBe(true);
+            expect(fs.existsSync(unrelated)).toBe(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     // Git for Windows helper startup is outside the renderer's enforced deadline.
     it('never emits an empty refresh and isolates cached output by session and mode', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-dispatcher-'));
@@ -891,7 +920,8 @@ describe('last-known-good statusline dispatcher', () => {
                 process.platform !== 'win32'
             );
             const activeRelease = path.join(targetRoot, 'active-release');
-            fs.writeFileSync(activeRelease, `${releaseId}\n`);
+            fs.writeFileSync(activeRelease, releaseId);
+            fs.writeFileSync(path.join(home, 'caller-marker'), 'CALLER-CWD-PRESERVED\n');
 
             const renderer = path.join(targetRoot, 'releases', releaseId, 'bin', 'ccstatusline-render');
             const rendererSource = process.platform === 'win32'
@@ -914,7 +944,7 @@ esac
 
             const dispatcher = path.join(targetRoot, 'dispatcher');
             const dispatcherTools = resolveDispatcherTools();
-            fs.writeFileSync(dispatcher, buildStatuslineDispatcher({
+            const dispatcherSource = buildStatuslineDispatcher({
                 targetRoot,
                 sedPath: '/usr/bin/sed',
                 sha256Path: dispatcherTools.sha256Path,
@@ -924,14 +954,43 @@ esac
                 shPath: process.platform === 'win32' ? shellPathForTest(process.execPath) : '/bin/sh',
                 warmTimeout: '0.25s',
                 coldTimeout: '1s'
-            }), { mode: 0o755 });
-            const run = (sessionId: string, mode: string, label = 'A', args: string[] = []) => {
+            });
+            const observedSource = dispatcherSource.replace('set -u', `set -u
+cat() {
+  IFS= read -r marker < ./caller-marker || return 98
+  [ "$marker" = 'CALLER-CWD-PRESERVED' ] || return 98
+  case "\${1:-}" in
+    *.ansi)
+      [ -s "$1" ] || return 97
+      printf '%s\\n' CACHE-COMMITTED >&2
+      if [ "\${CCSTATUSLINE_TEST_CANCEL:-}" = 1 ]; then
+        kill -TERM "$$"
+        return 0
+      fi
+      ;;
+  esac
+  command cat "$@"
+}
+mv() {
+  [ "\${CCSTATUSLINE_TEST_FAIL_PUBLISH:-}" != 1 ] || return 1
+  command mv "$@"
+}`);
+            fs.writeFileSync(dispatcher, observedSource, { mode: 0o755 });
+            const run = (
+                sessionId: string,
+                mode: string,
+                label = 'A',
+                args: string[] = [],
+                extraEnv: Record<string, string> = {}
+            ) => {
                 return spawnScript(dispatcher, args, {
                     encoding: 'utf8',
+                    cwd: home,
                     env: {
                         ...process.env,
                         HOME: home,
-                        XDG_CACHE_HOME: cacheHome
+                        XDG_CACHE_HOME: cacheHome.replaceAll('/', '\\'),
+                        ...extraEnv
                     },
                     input: `${JSON.stringify({ session_id: sessionId, mode, label })}\n`
                 });
@@ -940,6 +999,7 @@ esac
             const firstA = run('session-a', 'fast');
             expect(firstA.status).toBe(0);
             expect(firstA.stdout).toBe('LIVE-A\n');
+            expect(firstA.stderr).toContain('CACHE-COMMITTED');
 
             const slowA = run('session-a', 'slow');
             expect(slowA.status).toBe(0);
@@ -975,6 +1035,21 @@ esac
                 const privateMode = process.platform === 'win32' ? mode & 0o600 : mode;
                 expect(privateMode).toBe(0o600);
             }
+
+            const cancelled = run('session-cancel', 'fast', 'B', [],
+                { CCSTATUSLINE_TEST_CANCEL: '1' });
+            expect(cancelled.status, String(cancelled.stderr)).toBe(0);
+            expect(cancelled.stdout).toBe('');
+            expect(cancelled.stderr).toContain('CACHE-COMMITTED');
+            expect(run('session-cancel', 'slow', 'B').stdout).toBe('LIVE-B\n');
+            const publishFailure = run('session-publish-failure', 'fast', 'B', [],
+                { CCSTATUSLINE_TEST_FAIL_PUBLISH: '1' });
+            expect(publishFailure.status, String(publishFailure.stderr)).toBe(0);
+            expect(publishFailure.stdout).toBe('LIVE-B\n');
+            const remaining = fs.readdirSync(path.join(cacheHome, 'ccstatusline', 'last-good'));
+            expect(remaining.filter(file => file.endsWith('.ansi'))).toHaveLength(3);
+            expect(remaining.filter(file => file.startsWith('.payload.')
+                || file.startsWith('.output.'))).toHaveLength(0);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
@@ -1341,6 +1416,18 @@ fi
             expect(result.status, String(result.stderr)).toBe(0);
             expect(result.stdout).toBe('');
             expect(result.stderr).toBe('');
+            fs.writeFileSync(fixture.dispatcher, stableDispatcher({
+                backupRoot: path.join(fixture.root, 'backup'),
+                configuredSettingsPath: path.join(fixture.root, 'settings.json'),
+                repoRoot: fixture.root,
+                settingsPath: path.join(fixture.root, 'settings.json'),
+                targetRoot: fixture.targetRoot,
+                validationRoot: fixture.root
+            }, tools, false), { mode: 0o755 });
+            const renderer = runHook(fixture.dispatcher, fixture.home, fixture.runtimeRoot);
+            expect(renderer.status, String(renderer.stderr)).toBe(0);
+            expect(renderer.stdout).toContain('Statusline refreshing; invalid release');
+            expect(renderer.stdout).not.toContain('SHOULD-NOT-RUN');
         } finally {
             fs.rmSync(fixture.root, { recursive: true, force: true });
         }

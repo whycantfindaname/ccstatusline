@@ -274,7 +274,8 @@ export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions):
     return `#!/bin/sh
 set -u
 umask 077
-release_id=$(${sedPath} -n '1p' ${activeReleasePath}) || {
+release_id=''
+IFS= read -r release_id 2>/dev/null < ${activeReleasePath} || [ -n "$release_id" ] || {
   printf '%s\\n' 'Statusline refreshing; release pointer unavailable'
   exit 0
 }
@@ -288,14 +289,17 @@ if [ "\${#release_id}" -ne 64 ]; then
   printf '%s\\n' 'Statusline refreshing; invalid release pointer'
   exit 0
 fi
-releases_root=$(CDPATH= cd -- ${releasesPath} && pwd -P) || {
+original_cwd=$PWD
+CDPATH= cd -P -- ${releasesPath} || {
   printf '%s\\n' 'Statusline refreshing; release directory unavailable'
   exit 0
 }
-release_root=$(CDPATH= cd -- "$releases_root/$release_id" && pwd -P) || {
+releases_root=$PWD
+CDPATH= cd -P -- "$releases_root/$release_id" || {
   printf '%s\\n' 'Statusline refreshing; release unavailable'
   exit 0
 }
+release_root=$PWD
 case "$release_root" in
   "$releases_root"/*) ;;
   *)
@@ -303,6 +307,10 @@ case "$release_root" in
     exit 0
     ;;
 esac
+CDPATH= cd -P -- "$original_cwd" || {
+  printf '%s\\n' 'Statusline refreshing; caller directory unavailable'
+  exit 0
+}
 export CCSTATUSLINE_RELEASE_ROOT="$release_root"
 export CCSTATUSLINE_CONFIG_DIR="$release_root/config"
 runtime_binary="$release_root/bin/${runtimeBinaryName()}"
@@ -319,7 +327,17 @@ if [ -z "\${HOME:-}" ]; then
   exit 0
 fi
 cache_dir="\${XDG_CACHE_HOME:-\${HOME}/.cache}/ccstatusline/last-good"
-cache_dir=$(printf '%s\\n' "$cache_dir" | ${sedPath} 's#\\\\#/#g')
+cache_tail="$cache_dir"
+cache_dir=''
+while :; do
+  case "$cache_tail" in
+    *\\\\*)
+      cache_dir="$cache_dir\${cache_tail%%\\\\*}/"
+      cache_tail="\${cache_tail#*\\\\}"
+      ;;
+    *) cache_dir="$cache_dir$cache_tail"; break ;;
+  esac
+done
 case "$cache_dir" in
   /*|[A-Za-z]:/*) ;;
   *)
@@ -327,7 +345,7 @@ case "$cache_dir" in
     exit 0
     ;;
 esac
-if ! mkdir -p -- "$cache_dir"; then
+if [ ! -d "$cache_dir" ] && ! mkdir -p -- "$cache_dir"; then
   printf '%s\\n' 'Statusline refreshing; cache unavailable'
   exit 0
 fi
@@ -340,12 +358,8 @@ output_file=$(${mktempPath} "$cache_dir/.output.XXXXXX") || {
   printf '%s\\n' 'Statusline refreshing; output staging unavailable'
   exit 0
 }
-cache_tmp=''
 cleanup() {
   rm -f -- "$payload_file" "$output_file"
-  if [ -n "$cache_tmp" ]; then
-    rm -f -- "$cache_tmp"
-  fi
 }
 trap cleanup EXIT
 trap 'exit 0' HUP INT TERM
@@ -369,13 +383,10 @@ status=0
   < "$payload_file" > "$output_file" || status=$?
 
 if [ "$status" -eq 0 ] && [ -s "$output_file" ]; then
-  cat "$output_file"
-  cache_tmp="$cache_file.$$.tmp"
-  if cat "$output_file" > "$cache_tmp"; then
-    chmod 600 "$cache_tmp" 2>/dev/null || true
-    if mv -f -- "$cache_tmp" "$cache_file"; then
-      cache_tmp=''
-    fi
+  if mv -f -- "$output_file" "$cache_file"; then
+    cat "$cache_file"
+  else
+    cat "$output_file"
   fi
   ${findPath} "$cache_dir" -mindepth 1 -maxdepth 1 -type f \
     -name '*.ansi' -mmin +10080 -delete >/dev/null 2>&1 || true

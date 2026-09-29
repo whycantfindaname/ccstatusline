@@ -262,7 +262,14 @@ function commandPathOptional(command: string): string | null {
     if (result.status !== 0) {
         return null;
     }
-    return selectFirstCommandPath(result.stdout);
+    let output = result.stdout;
+    if (process.platform === 'win32' && command === 'find') {
+        const systemFind = path.resolve(windowsSystemCommand('find.exe')).toLowerCase();
+        output = output.split(/\r?\n/).filter((candidate) => {
+            return path.resolve(candidate.trim()).toLowerCase() !== systemFind;
+        }).join('\n');
+    }
+    return selectFirstCommandPath(output);
 }
 
 function commandPath(command: string): string {
