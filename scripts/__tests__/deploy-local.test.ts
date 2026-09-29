@@ -259,7 +259,7 @@ $aclEntries = foreach ($target in $targets) {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
-    });
+    }, 15000);
 
     it('rejects an unsecured backup and removes the partial batch', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-backup-fail-'));
@@ -574,6 +574,15 @@ if (args[0] === 'config' && args[1] === 'path') {
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
+    });
+
+    it('sets only the Windows SessionEnd outer deadline to ten seconds', () => {
+        const hooks = MANAGED_PATCH.hooks as Record<string, JsonObject[]>;
+        const sessionEnd = hooks.SessionEnd?.[0]?.hooks as JsonObject[] | undefined;
+        const sessionStart = hooks.SessionStart?.[0]?.hooks as JsonObject[] | undefined;
+
+        expect(sessionEnd?.[0]?.timeout).toBe(process.platform === 'win32' ? 10 : 2);
+        expect(sessionStart?.[0]?.timeout).toBe(2);
     });
 
     it('selects the first valid command path from multiline Windows lookup output', () => {

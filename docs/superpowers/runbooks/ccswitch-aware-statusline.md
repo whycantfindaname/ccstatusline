@@ -90,6 +90,10 @@ The settings merge owns:
 - managed `SessionStart`, `SubagentStart`, `SubagentStop`, and `SessionEnd`
   command hooks
 
+On Windows, the managed `SessionEnd` hook has a 10-second Claude deadline to
+cover observed cold launcher latency. Its internal work remains supervised for
+two seconds; the other managed hooks keep their two-second deadlines.
+
 Before each state-changing write, the installer re-reads and field-merges the
 live Claude settings and optional CCSwitch common config. Unrelated fields and
 hook commands present in that final read are preserved. Both consumers expose

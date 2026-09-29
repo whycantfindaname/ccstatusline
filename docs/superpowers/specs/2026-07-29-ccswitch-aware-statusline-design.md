@@ -224,6 +224,12 @@ The managed Claude settings patch contains:
 }
 ```
 
+The example above shows the non-Windows patch. Windows gives only `SessionEnd`
+a 10-second outer Claude deadline because the Git Bash and native executable
+cold-start chain has exceeded two seconds on this host. The hook's internal
+supervisor still limits its work to two seconds; all other managed events retain
+their two-second outer deadline.
+
 The merge is applied to both the Claude settings authority and, when enabled,
 the CCSwitch Claude common-config snippet. It replaces `statusLine` and
 `subagentStatusLine`, removes earlier managed hook commands, and preserves all

@@ -80,7 +80,7 @@ export function buildManagedPatch(
             hooks: [{
                 type: 'command',
                 command: hookCommand,
-                timeout: 2
+                timeout: process.platform === 'win32' && hookDef.event === 'SessionEnd' ? 10 : 2
             }]
         };
         if (hookDef.matcher !== undefined) {
