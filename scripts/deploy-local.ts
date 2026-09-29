@@ -1177,7 +1177,7 @@ function smokeTranscriptRecords(): string {
     return `${records.map(record => JSON.stringify(record)).join('\n')}\n`;
 }
 
-function verifyStatuslineSmoke(
+export function verifyStatuslineSmoke(
     paths: DeploymentPaths,
     command: string,
     releaseRoot?: string,
@@ -1252,6 +1252,7 @@ function verifyStatuslineSmoke(
             throw new Error(
                 'Statusline smoke output did not preserve the required four-line UI fields '
                 + `(lines=${normalizedLines.length}, missing=${missing.join(', ') || 'none'})`
+                + `; synthetic fixture output=${JSON.stringify(normalizedOutput)}`
             );
         }
         if (expectLastGoodCache) {

@@ -17,7 +17,8 @@ import {
     resolveProviderRegistry,
     selectFirstCommandPath,
     stableDispatcher,
-    syncCCSwitchCommon
+    syncCCSwitchCommon,
+    verifyStatuslineSmoke
 } from '../deploy-local';
 import {
     buildManagedPatch,
@@ -728,6 +729,107 @@ describe('optional CCSwitch provider discovery', () => {
 });
 
 describe('last-known-good statusline dispatcher', () => {
+    it('includes synthetic output in smoke field failures', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-smoke-error-'));
+        const originalHome = process.env.HOME;
+        try {
+            process.env.HOME = root;
+            const renderer = path.join(root, 'renderer');
+            fs.writeFileSync(renderer,
+                '#!/bin/sh\nprintf "\\033[0mProvider OLD\\ncwd: OLD\\nContext OLD\\nCost OLD\\n"\n',
+                { mode: 0o755 });
+            expect(() => verifyStatuslineSmoke(resolveDeploymentPaths(), renderer))
+                .toThrow('synthetic fixture output="Provider OLD\\ncwd: OLD');
+        } finally {
+            if (originalHome === undefined) {
+                delete process.env.HOME;
+            } else {
+                process.env.HOME = originalHome;
+            }
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it.skipIf(process.platform !== 'win32')('refreshes native warm cache without a wrapper', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-native-warm-'));
+        try {
+            const targetRoot = path.join(root, 'statusline');
+            const releaseId = 'e'.repeat(64);
+            const releaseRoot = path.join(targetRoot, 'releases', releaseId);
+            const releaseBin = path.join(releaseRoot, 'bin');
+            const configRoot = path.join(releaseRoot, 'config');
+            const home = path.join(root, 'home');
+            const cacheHome = path.join(root, 'cache');
+            fs.mkdirSync(releaseBin, { recursive: true });
+            fs.mkdirSync(configRoot);
+            fs.mkdirSync(home);
+            const runtime = path.join(releaseBin, runtimeBinaryName());
+            const distribution = path.join(root, 'ccstatusline.js');
+            const bundle = spawnSync(process.execPath, [
+                'build', path.resolve('src/ccstatusline.ts'), '--target=node',
+                '--outfile', distribution, '--target-version=14'
+            ], { encoding: 'utf8' });
+            expect(bundle.status, bundle.stderr).toBe(0);
+            const compilation = spawnSync(process.execPath, [
+                'build', '--compile', distribution, '--outfile', runtime
+            ], { encoding: 'utf8' });
+            expect(compilation.status, compilation.stderr).toBe(0);
+            for (const name of ['settings.json', 'providers.json', 'models.json']) {
+                fs.copyFileSync(path.resolve('config/statusline', name), path.join(configRoot, name));
+            }
+            fs.writeFileSync(path.join(targetRoot, 'active-release'), `${releaseId}\n`);
+            fs.writeFileSync(path.join(releaseBin, 'ccstatusline-render'),
+                '#!/bin/sh\nprintf "%s\\n" "OLD-WRAPPER"\n', { mode: 0o755 });
+            const dispatcher = path.join(root, 'dispatcher');
+            fs.writeFileSync(dispatcher, buildStatuslineDispatcher({
+                targetRoot,
+                ...resolveDispatcherTools()
+            }), { mode: 0o755 });
+            const env = {
+                ...process.env,
+                HOME: home,
+                USERPROFILE: home,
+                XDG_CACHE_HOME: cacheHome,
+                ANTHROPIC_BASE_URL: 'http://localhost:8317',
+                CCSTATUSLINE_WIDTH: '240'
+            };
+            const run = (cost: number) => spawnScript(dispatcher, [], {
+                encoding: 'utf8', env,
+                input: `${JSON.stringify({
+                    session_id: 'native-warm', cwd: root,
+                    workspace: { current_dir: root },
+                    model: { id: 'gpt-5.6-sol' },
+                    context_window: { context_window_size: 1_000_000 },
+                    cost: { total_cost_usd: cost }
+                })}\n`
+            });
+            const cold = run(1.23);
+            expect(cold.status, String(cold.stderr)).toBe(0);
+            expect(cold.stdout).toContain('ClipProxyAPI');
+            expect(cold.stdout).toContain('$1.23');
+            const cacheRoot = path.join(cacheHome, 'ccstatusline', 'last-good');
+            const cacheFiles = fs.readdirSync(cacheRoot).filter(name => name.endsWith('.ansi'));
+            expect(cacheFiles).toHaveLength(1);
+            const cacheFile = cacheFiles[0];
+            if (cacheFile === undefined) {
+                throw new Error('Expected native runtime output cache');
+            }
+            const cachePath = path.join(cacheRoot, cacheFile);
+            fs.writeFileSync(cachePath, 'OLD-FIXTURE\n');
+            const warm = run(2.34);
+            expect(warm.status, String(warm.stderr)).toBe(0);
+            expect(warm.stdout).toContain('ClipProxyAPI');
+            expect(warm.stdout).toContain('$2.34');
+            expect(warm.stdout).not.toContain('OLD-FIXTURE');
+            expect(warm.stdout).not.toContain('OLD-WRAPPER');
+            expect(fs.readFileSync(cachePath, 'utf8')).toBe(String(warm.stdout));
+            expect(fs.readFileSync(dispatcher, 'utf8')).toContain('duration=\'1\'');
+            expect(fs.readFileSync(dispatcher, 'utf8')).toContain('duration=\'4\'');
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    }, 60000);
+
     it('selects stock macOS shasum when sha256sum is unavailable', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-shasum-tools-'));
         const originalPath = process.env.PATH;

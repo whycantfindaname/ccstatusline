@@ -267,7 +267,9 @@ export function buildStatuslineDispatcher(options: StatuslineDispatcherOptions):
         .join(' ');
     const findPath = shellQuote(shellPath(options.findPath));
     const mktempPath = shellQuote(shellPath(options.mktempPath));
-    const shPath = shellQuote(shellPath(options.shPath ?? 'sh'));
+    const rendererCommand = options.shPath
+        ? `${shellQuote(shellPath(options.shPath))} "$release_root/bin/ccstatusline-render"`
+        : '"$runtime_binary" --config "$release_root/config/settings.json"';
 
     return `#!/bin/sh
 set -u
@@ -302,6 +304,7 @@ case "$release_root" in
     ;;
 esac
 export CCSTATUSLINE_RELEASE_ROOT="$release_root"
+export CCSTATUSLINE_CONFIG_DIR="$release_root/config"
 runtime_binary="$release_root/bin/${runtimeBinaryName()}"
 if [ ! -x "$runtime_binary" ]; then
   runtime_binary="$release_root/bin/ccstatusline"
@@ -362,7 +365,7 @@ if [ ! -s "$cache_file" ]; then
 fi
 status=0
     "$runtime_binary" --internal-supervise "$duration" \
-      ${shPath} "$release_root/bin/ccstatusline-render" "$@" \
+      ${rendererCommand} "$@" \
   < "$payload_file" > "$output_file" || status=$?
 
 if [ "$status" -eq 0 ] && [ -s "$output_file" ]; then
