@@ -874,44 +874,109 @@ function timestampSlug(): string {
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
 }
 
-async function createBackup(
+function secureWindowsBackupPath(targetPath: string, directory: boolean): void {
+    if (process.platform !== 'win32') {
+        return;
+    }
+    const script = `
+$ErrorActionPreference = 'Stop'
+$target = $env:CCSTATUSLINE_BACKUP_ACL_PATH
+$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+$acl = Get-Acl -LiteralPath $target
+$acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]))) {
+    $null = $acl.RemoveAccessRuleSpecific($rule)
+}
+$inheritance = if ($env:CCSTATUSLINE_BACKUP_ACL_DIRECTORY -eq '1') {
+    [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+} else {
+    [System.Security.AccessControl.InheritanceFlags]::None
+}
+$rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+    $identity,
+    [System.Security.AccessControl.FileSystemRights]::FullControl,
+    $inheritance,
+    [System.Security.AccessControl.PropagationFlags]::None,
+    [System.Security.AccessControl.AccessControlType]::Allow
+)
+$acl.AddAccessRule($rule)
+Set-Acl -LiteralPath $target -AclObject $acl
+`;
+    const result = spawnSync(
+        windowsSystemCommand('WindowsPowerShell\\v1.0\\powershell.exe'),
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        {
+            encoding: 'utf8',
+            env: commandEnvironment({
+                CCSTATUSLINE_BACKUP_ACL_DIRECTORY: directory ? '1' : '0',
+                CCSTATUSLINE_BACKUP_ACL_PATH: targetPath
+            }),
+            stdio: ['ignore', 'pipe', 'pipe']
+        }
+    );
+    if (result.status !== 0) {
+        const stderr = result.stderr.trim();
+        const diagnostic = stderr.length > 0
+            ? stderr
+            : (result.error?.message ?? `PowerShell exited ${result.status}`);
+        throw new Error(
+            `Could not secure backup ACL for ${targetPath}: ${diagnostic}`
+        );
+    }
+}
+
+export async function createBackup(
     paths: DeploymentPaths,
-    ccSwitchCommon: CCSwitchCommonResolution
+    ccSwitchCommon: CCSwitchCommonResolution,
+    securePath: (targetPath: string, directory: boolean) => void = secureWindowsBackupPath
 ): Promise<string> {
     const backupRoot = path.join(
         paths.backupRoot,
         `${timestampSlug()}-statusline-setup`
     );
-    await fs.promises.mkdir(backupRoot, { recursive: true, mode: 0o700 });
-    const metadata: BackupMetadata = {
-        activeRelease: readReleasePointer(activeReleasePath(paths)),
-        createdAt: new Date().toISOString(),
-        hadCcSwitchCommon: ccSwitchCommon.current !== null,
-        hadSettings: fs.existsSync(paths.settingsPath),
-        paths: {
-            backupRoot: paths.backupRoot,
-            settingsPath: paths.settingsPath,
-            targetRoot: paths.targetRoot
-        },
-        previousRelease: readReleasePointer(previousReleasePath(paths)),
-        retainUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        version: 5
-    };
-    if (metadata.hadSettings) {
-        await fs.promises.copyFile(
-            paths.settingsPath,
-            path.join(backupRoot, 'claude-settings.json')
-        );
-        await fs.promises.chmod(path.join(backupRoot, 'claude-settings.json'), 0o600);
+    await fs.promises.mkdir(paths.backupRoot, { recursive: true, mode: 0o700 });
+    await fs.promises.mkdir(backupRoot, { mode: 0o700 });
+    try {
+        securePath(backupRoot, true);
+        const metadata: BackupMetadata = {
+            activeRelease: readReleasePointer(activeReleasePath(paths)),
+            createdAt: new Date().toISOString(),
+            hadCcSwitchCommon: ccSwitchCommon.current !== null,
+            hadSettings: fs.existsSync(paths.settingsPath),
+            paths: {
+                backupRoot: paths.backupRoot,
+                settingsPath: paths.settingsPath,
+                targetRoot: paths.targetRoot
+            },
+            previousRelease: readReleasePointer(previousReleasePath(paths)),
+            retainUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            version: 5
+        };
+        if (metadata.hadSettings) {
+            await fs.promises.writeFile(
+                path.join(backupRoot, 'claude-settings.json'),
+                await fs.promises.readFile(paths.settingsPath),
+                { flag: 'wx', mode: 0o600 }
+            );
+            securePath(path.join(backupRoot, 'claude-settings.json'), false);
+        }
+        if (ccSwitchCommon.current) {
+            await writeJsonAtomic(
+                path.join(backupRoot, 'cc-switch-common.json'),
+                ccSwitchCommon.current
+            );
+            securePath(path.join(backupRoot, 'cc-switch-common.json'), false);
+        }
+        await writeJsonAtomic(path.join(backupRoot, 'metadata.json'), metadata);
+        securePath(path.join(backupRoot, 'metadata.json'), false);
+        return backupRoot;
+    } catch (error) {
+        if (path.dirname(path.resolve(backupRoot)) !== path.resolve(paths.backupRoot)) {
+            throw error;
+        }
+        await fs.promises.rm(backupRoot, { recursive: true, force: true });
+        throw error;
     }
-    if (ccSwitchCommon.current) {
-        await writeJsonAtomic(
-            path.join(backupRoot, 'cc-switch-common.json'),
-            ccSwitchCommon.current
-        );
-    }
-    await writeJsonAtomic(path.join(backupRoot, 'metadata.json'), metadata);
-    return backupRoot;
 }
 
 function resolveBackupRoot(paths: DeploymentPaths, argument: string): string {

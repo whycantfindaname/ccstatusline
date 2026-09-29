@@ -243,7 +243,8 @@ Apply order:
 2. run lint, tests, distribution build, and local-runtime build;
 3. compute the semantic plan and return early for an exact no-op;
 4. create a mode-`0700` backup with mode-`0600` Claude settings and optional
-   CCSwitch common-config content;
+   CCSwitch common-config content; on Windows, protect the backup directory and
+   every backup file, including metadata, with an owner-only ACL before staging;
 5. stage and validate the complete immutable release;
 6. smoke the release wrapper and approved four-line output;
 7. atomically install stable dispatchers;

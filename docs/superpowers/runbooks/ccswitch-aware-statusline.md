@@ -79,6 +79,9 @@ the active native binary to `${JASON_CCSTATUSLINE_RUNTIME_ROOT:-$HOME/.local/sha
 field-merges Claude settings, and runs the stable main and hook commands. The
 stable hook executes both its supervisor and activity-hook child from that HOME
 projection while reading configuration from the immutable release.
+On Windows, backup creation applies owner-only ACLs to the new directory and
+each backup file. An ACL failure aborts apply before release staging or settings
+changes.
 
 The settings merge owns:
 

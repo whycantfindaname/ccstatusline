@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import {
+    createBackup,
     projectActiveRuntime,
     releaseWrapper,
     resolveDeploymentPaths,
@@ -163,6 +164,133 @@ describe('portable deployment path resolution', () => {
             })).toThrow('Claude settings symlink is unresolved');
             expect(fs.lstatSync(path.join(configRoot, 'settings.json')).isSymbolicLink())
                 .toBe(true);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+});
+
+describe('local deployment backups', () => {
+    it('secures the directory, Claude settings, CCSwitch config, and metadata', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-backup-acl-'));
+        try {
+            const paths = resolveDeploymentPaths({ HOME: root });
+            fs.mkdirSync(path.dirname(paths.settingsPath), { recursive: true });
+            fs.writeFileSync(paths.settingsPath, '{"statusLine":{"command":"old"}}\n');
+            const backup = await createBackup(paths, {
+                command: null,
+                current: { statusLine: { command: 'old' } },
+                next: null
+            });
+            const entries = [
+                backup,
+                path.join(backup, 'claude-settings.json'),
+                path.join(backup, 'cc-switch-common.json'),
+                path.join(backup, 'metadata.json')
+            ];
+            for (const entry of entries) {
+                expect(fs.existsSync(entry)).toBe(true);
+            }
+
+            if (process.platform === 'win32') {
+                const script = `
+$ErrorActionPreference = 'Stop'
+$sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$targets = ConvertFrom-Json -InputObject $env:CCSTATUSLINE_TEST_ACL_PATHS
+$aclEntries = foreach ($target in $targets) {
+    $acl = Get-Acl -LiteralPath $target
+    $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+        [pscustomobject]@{
+            sid = $_.IdentityReference.Value
+            rights = $_.FileSystemRights.ToString()
+            type = $_.AccessControlType.ToString()
+            inherited = $_.IsInherited
+        }
+    })
+    [pscustomobject]@{ protected = $acl.AreAccessRulesProtected; rules = $rules }
+}
+[pscustomobject]@{ sid = $sid; entries = @($aclEntries) } | ConvertTo-Json -Compress -Depth 5
+`;
+                const powershell = path.join(
+                    process.env.SystemRoot ?? 'C:\\Windows',
+                    'System32',
+                    'WindowsPowerShell',
+                    'v1.0',
+                    'powershell.exe'
+                );
+                const result = spawnSync(powershell, [
+                    '-NoProfile', '-NonInteractive', '-Command', script
+                ], {
+                    encoding: 'utf8',
+                    env: {
+                        ...process.env,
+                        CCSTATUSLINE_TEST_ACL_PATHS: JSON.stringify(entries)
+                    }
+                });
+                expect(result.status).toBe(0);
+                const actual = JSON.parse(result.stdout) as {
+                    sid: string;
+                    entries: {
+                        protected: boolean;
+                        rules: {
+                            sid: string;
+                            rights: string;
+                            type: string;
+                            inherited: boolean;
+                        }[];
+                    }[];
+                };
+                expect(actual.entries).toHaveLength(4);
+                for (const entry of actual.entries) {
+                    expect(entry.protected).toBe(true);
+                    expect(entry.rules).toEqual([{
+                        sid: actual.sid,
+                        rights: 'FullControl',
+                        type: 'Allow',
+                        inherited: false
+                    }]);
+                }
+            } else {
+                expect(fs.statSync(backup).mode & 0o777).toBe(0o700);
+                for (const entry of entries.slice(1)) {
+                    expect(fs.statSync(entry).mode & 0o777).toBe(0o600);
+                }
+            }
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    it('rejects an unsecured backup and removes the partial batch', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-backup-fail-'));
+        try {
+            const paths = resolveDeploymentPaths({ HOME: root });
+            fs.mkdirSync(path.dirname(paths.settingsPath), { recursive: true });
+            const originalSettings = '{"keep":"original"}\n';
+            fs.writeFileSync(paths.settingsPath, originalSettings);
+            const secured: string[] = [];
+            await createBackup(paths, {
+                command: null,
+                current: { statusLine: { command: 'old' } },
+                next: null
+            }, (targetPath) => {
+                secured.push(path.basename(targetPath));
+                if (path.basename(targetPath) === 'metadata.json') {
+                    throw new Error('ACL rejected');
+                }
+            }).then(
+                () => { throw new Error('Backup unexpectedly succeeded'); },
+                (error: unknown) => { expect(error).toEqual(new Error('ACL rejected')); }
+            );
+            expect(secured[0]).toMatch(/-statusline-setup$/);
+            expect(secured.slice(1)).toEqual([
+                'claude-settings.json',
+                'cc-switch-common.json',
+                'metadata.json'
+            ]);
+            expect(fs.readdirSync(paths.backupRoot)).toHaveLength(0);
+            expect(fs.readFileSync(paths.settingsPath, 'utf8')).toBe(originalSettings);
+            expect(fs.existsSync(paths.targetRoot)).toBe(false);
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
