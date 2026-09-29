@@ -1140,7 +1140,7 @@ describe('HOME projected hook dispatcher', () => {
         sha256Path: '/usr/bin/sha256sum'
     };
 
-    function createFixture(): {
+    function createFixture(sedPath = tools.sedPath): {
         dispatcher: string;
         home: string;
         releaseId: string;
@@ -1166,17 +1166,19 @@ describe('HOME projected hook dispatcher', () => {
             settingsPath: path.join(root, 'settings.json'),
             targetRoot,
             validationRoot: root
-        }, tools, true), { mode: 0o755 });
+        }, { ...tools, sedPath }, true), { mode: 0o755 });
         return { dispatcher, home, releaseId, root, runtimeRoot, targetRoot };
     }
 
     function runHook(
         dispatcher: string,
         home: string,
-        runtimeRoot?: string
+        runtimeRoot?: string,
+        cwd?: string
     ): ReturnType<typeof spawnSync> {
         return spawnScript(dispatcher, [], {
             encoding: 'utf8',
+            cwd,
             env: {
                 ...process.env,
                 HOME: home,
@@ -1278,6 +1280,67 @@ exit 0
                     'settings.json'
                 ).replaceAll('\\', '/')} --activity-hook`
             );
+        } finally {
+            fs.rmSync(fixture.root, { recursive: true, force: true });
+        }
+    });
+
+    it('uses builtins for pointers and paths while preserving the caller cwd', () => {
+        const fixture = createFixture('/unavailable/sed');
+        try {
+            const versionRoot = path.join(fixture.runtimeRoot, 'versions', fixture.releaseId);
+            const callsPath = path.join(fixture.root, 'builtin-calls');
+            fs.mkdirSync(versionRoot, { recursive: true });
+            fs.writeFileSync(path.join(fixture.home, 'caller-marker'), 'CALLER-CWD-PRESERVED\n');
+            fs.writeFileSync(path.join(fixture.targetRoot, 'active-release'), fixture.releaseId);
+            fs.writeFileSync(path.join(fixture.runtimeRoot, '.active-key'), fixture.releaseId);
+            fs.writeFileSync(path.join(versionRoot, 'ccstatusline'), `#!/bin/sh
+IFS= read -r marker < ./caller-marker || exit 99
+printf '%s|%s\\n' "$marker" "$*" >> ${JSON.stringify(shellPathForTest(callsPath))}
+if [ "$1" = '--internal-supervise' ]; then
+  shift 2
+  exec "$@"
+fi
+`, { mode: 0o755 });
+            expect(fs.readFileSync(fixture.dispatcher, 'utf8')).not.toContain('/unavailable/sed');
+
+            for (const runtimeRoot of [
+                fixture.runtimeRoot,
+                fixture.runtimeRoot.replaceAll('\\', '/').replaceAll('/', '\\')
+            ]) {
+                const result = runHook(fixture.dispatcher, fixture.home, runtimeRoot, fixture.home);
+                expect(result.status, String(result.stderr)).toBe(0);
+                expect(result.stdout).toBe('');
+                expect(result.stderr).toBe('');
+            }
+            const calls = fs.readFileSync(callsPath, 'utf8').trim().split('\n');
+            expect(calls).toHaveLength(4);
+            for (const call of calls) {
+                expect(call.split('|')[0]).toBe('CALLER-CWD-PRESERVED');
+            }
+            expect(calls[0]).toContain('|--internal-supervise 2 ');
+            expect(calls[1]).toContain('--activity-hook');
+        } finally {
+            fs.rmSync(fixture.root, { recursive: true, force: true });
+        }
+    }, process.platform === 'win32' ? 15000 : undefined);
+
+    it('rejects a release symlink escaping physical containment', () => {
+        const fixture = createFixture();
+        try {
+            const releaseRoot = path.join(fixture.targetRoot, 'releases', fixture.releaseId);
+            const escapedRoot = path.join(fixture.root, 'escaped-release');
+            fs.renameSync(releaseRoot, escapedRoot);
+            fs.symlinkSync(escapedRoot, releaseRoot, process.platform === 'win32' ? 'junction' : 'dir');
+            const versionRoot = path.join(fixture.runtimeRoot, 'versions', fixture.releaseId);
+            fs.mkdirSync(versionRoot, { recursive: true });
+            fs.writeFileSync(path.join(fixture.runtimeRoot, '.active-key'), fixture.releaseId);
+            fs.writeFileSync(path.join(versionRoot, 'ccstatusline'),
+                '#!/bin/sh\nprintf SHOULD-NOT-RUN\nexit 99\n', { mode: 0o755 });
+            const result = runHook(fixture.dispatcher, fixture.home, fixture.runtimeRoot);
+            expect(result.status, String(result.stderr)).toBe(0);
+            expect(result.stdout).toBe('');
+            expect(result.stderr).toBe('');
         } finally {
             fs.rmSync(fixture.root, { recursive: true, force: true });
         }

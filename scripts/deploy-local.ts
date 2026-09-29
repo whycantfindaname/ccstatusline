@@ -564,35 +564,50 @@ export function stableDispatcher(
     }
     const activePath = shellQuote(shellPath(activeReleasePath(paths)));
     const releasePrefix = shellQuote(shellPath(`${paths.targetRoot}/releases/`));
-    const sedPath = shellQuote(shellPath(tools.sedPath));
     return `#!/bin/sh
 set -u
 [ -n "\${HOME:-}" ] || exit 0
 runtime_root="\${JASON_CCSTATUSLINE_RUNTIME_ROOT:-\${HOME}/.local/share/ccstatusline}"
-runtime_root=$(printf '%s\\n' "$runtime_root" | ${sedPath} 's#\\\\#/#g')
+runtime_tail="$runtime_root"
+runtime_root=
+while :; do
+  case "$runtime_tail" in
+    *\\\\*)
+      runtime_root="$runtime_root\${runtime_tail%%\\\\*}/"
+      runtime_tail="\${runtime_tail#*\\\\}"
+      ;;
+    *) runtime_root="$runtime_root$runtime_tail"; break ;;
+  esac
+done
 case "$runtime_root" in
   /*|[A-Za-z]:/*) ;;
   *) exit 0 ;;
 esac
-release_id=$(${sedPath} -n '1p' ${activePath}) || exit 0
+release_id=
+IFS= read -r release_id 2>/dev/null < ${activePath} || [ -n "$release_id" ] || exit 0
 case "$release_id" in
   ''|*[!0-9a-f]*) exit 0 ;;
 esac
 [ "\${#release_id}" -eq 64 ] || exit 0
 [ -f "$runtime_root/.active-key" ] || exit 0
-active_key=$(${sedPath} -n '1p' "$runtime_root/.active-key") || exit 0
+active_key=
+IFS= read -r active_key < "$runtime_root/.active-key" || [ -n "$active_key" ] || exit 0
 [ "$active_key" = "$release_id" ] || exit 0
 runtime_binary="$runtime_root/versions/$release_id/${runtimeBinaryName()}"
 if [ ! -x "$runtime_binary" ]; then
   runtime_binary="$runtime_root/versions/$release_id/ccstatusline"
 fi
 [ -x "$runtime_binary" ] || exit 0
-releases_root=$(CDPATH= cd -- ${releasePrefix} && pwd -P) || exit 0
-release_root=$(CDPATH= cd -- "$releases_root/$release_id" && pwd -P) || exit 0
+original_cwd=$PWD
+CDPATH= cd -P -- ${releasePrefix} || exit 0
+releases_root=$PWD
+CDPATH= cd -P -- "$releases_root/$release_id" || exit 0
+release_root=$PWD
 case "$release_root" in
   "$releases_root"/*) ;;
   *) exit 0 ;;
 esac
+CDPATH= cd -P -- "$original_cwd" || exit 0
 config_path="$release_root/config/settings.json"
 [ -f "$config_path" ] || exit 0
 export CCSTATUSLINE_CONFIG_DIR="$release_root/config"
