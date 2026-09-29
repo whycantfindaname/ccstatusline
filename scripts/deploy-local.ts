@@ -520,8 +520,10 @@ export function releaseWrapper(paths: DeploymentPaths, hook: boolean): string {
 set -eu
 : "\${CCSTATUSLINE_RELEASE_ROOT:?missing pinned release root}"
 release_root=$(printf '%s\\n' "$CCSTATUSLINE_RELEASE_ROOT" | sed 's#\\\\#/#g')
+release_root=$(CDPATH= cd -- "$release_root" && pwd -P) || exit 1
+releases_root=$(CDPATH= cd -- ${releasePrefix} && pwd -P) || exit 1
 case "$release_root" in
-  ${releasePrefix}*) ;;
+  "$releases_root"/*) ;;
   *) exit 1 ;;
 esac
 export CCSTATUSLINE_CONFIG_DIR="$release_root/config"

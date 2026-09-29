@@ -58,8 +58,8 @@ export function buildManagedPatch(
     targetRoot: string,
     activityHooks: ManagedActivityHook[] = []
 ): JsonObject {
-    const statuslineCommand = `${targetRoot}/bin/ccstatusline`;
-    const hookCommand = `${targetRoot}/bin/ccstatusline-hook`;
+    const statuslineCommand = `${shellPath(targetRoot)}/bin/ccstatusline`;
+    const hookCommand = `${shellPath(targetRoot)}/bin/ccstatusline-hook`;
     const hooks: JsonObject = {};
     const seen = new Set<string>();
     const hookDefs: ManagedActivityHook[] = [

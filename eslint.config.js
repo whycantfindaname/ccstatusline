@@ -8,6 +8,7 @@ import reactHooksPlugin from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 const importResolverSettings = {
+    'import-x/core-modules': ['bun:test'],
     'import-x/resolver': {
         typescript: {
             project: ['./tsconfig.json'],

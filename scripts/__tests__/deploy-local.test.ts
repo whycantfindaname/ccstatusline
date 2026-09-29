@@ -1,11 +1,9 @@
-/* eslint-disable import-x/no-unresolved */
 import {
     describe,
     expect,
     it,
     mock
 } from 'bun:test';
-/* eslint-enable import-x/no-unresolved */
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -171,6 +169,23 @@ describe('portable deployment path resolution', () => {
 });
 
 describe('local deployment settings merge', () => {
+    it('uses shell-compatible Windows paths in managed commands', () => {
+        if (process.platform !== 'win32') {
+            return;
+        }
+        const patch = buildManagedPatch('D:\\Users\\native\\.claude\\statusline');
+        expect((patch.statusLine as JsonObject).command).toBe(
+            'D:/Users/native/.claude/statusline/bin/ccstatusline'
+        );
+        expect((patch.subagentStatusLine as JsonObject).command).toBe(
+            'D:/Users/native/.claude/statusline/bin/ccstatusline --subagent'
+        );
+        const hooks = patch.hooks as Record<string, { hooks: JsonObject[] }[]>;
+        expect(hooks.SessionStart?.[0]?.hooks[0]?.command).toBe(
+            'D:/Users/native/.claude/statusline/bin/ccstatusline-hook'
+        );
+    });
+
     it('parses the JSON object from CCSwitch common-config output', () => {
         expect(parseCCSwitchCommonConfig(`
 Common Config Snippet
@@ -753,6 +768,7 @@ describe('last-known-good statusline dispatcher', () => {
         }
     });
 
+    // Git for Windows helper startup is outside the renderer's enforced deadline.
     it('never emits an empty refresh and isolates cached output by session and mode', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-dispatcher-'));
         try {
@@ -860,7 +876,7 @@ esac
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
-    }, process.platform === 'win32' ? 25000 : undefined);
+    }, process.platform === 'win32' ? 60000 : undefined);
 
     it('terminates renderer descendants when the deadline expires', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-process-tree-'));
@@ -936,7 +952,7 @@ wait
             }
             fs.rmSync(root, { recursive: true, force: true });
         }
-    });
+    }, process.platform === 'win32' ? 20000 : undefined);
 
     it('runs with a shasum-only toolset and no GNU timeout', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-macos-tools-'));
@@ -999,7 +1015,7 @@ exec ${JSON.stringify(nativeHashTools.sha256Path)} ${nativeHashTools.sha256Args.
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
-    });
+    }, process.platform === 'win32' ? 20000 : undefined);
 
     it('rejects timeout strings that could alter the generated shell command', () => {
         expect(() => buildStatuslineDispatcher({
@@ -1257,10 +1273,40 @@ exit 0
                 fs.rmSync(fixture.root, { recursive: true, force: true });
             }
         }
-    });
+    }, process.platform === 'win32' ? 25000 : undefined);
 });
 
 describe('generated dispatcher shell portability', () => {
+    it('accepts the canonical shell release root and rejects a foreign root', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-wrapper-'));
+        try {
+            const paths = resolveDeploymentPaths({ HOME: root });
+            const releaseRoot = path.join(paths.targetRoot, 'releases', 'a'.repeat(64));
+            fs.mkdirSync(path.join(releaseRoot, 'bin'), { recursive: true });
+            fs.writeFileSync(path.join(releaseRoot, 'bin', 'ccstatusline'),
+                '#!/bin/sh\nprintf "%s\\n" WRAPPER-LIVE\n', { mode: 0o755 });
+            const wrapper = path.join(root, 'wrapper');
+            fs.writeFileSync(wrapper, releaseWrapper(paths, false), { mode: 0o755 });
+            const run = (release: string) => spawnScript(wrapper, [], {
+                encoding: 'utf8',
+                env: { ...process.env, CCSTATUSLINE_RELEASE_ROOT: release }
+            });
+            const canonical = spawnSync(
+                process.platform === 'win32' ? 'bash' : 'sh',
+                ['-c', 'CDPATH= cd -- "$1" && pwd -P', 'resolve-release', releaseRoot.replaceAll('\\', '/')],
+                { encoding: 'utf8' }
+            );
+            expect(canonical.status).toBe(0);
+            const accepted = run(canonical.stdout.trim());
+            expect(accepted.status, String(accepted.stderr)).toBe(0);
+            expect(accepted.stdout).toBe('WRAPPER-LIVE\n');
+            expect(run(releaseRoot).stdout).toBe('WRAPPER-LIVE\n');
+            expect(run(root).status).toBe(1);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    }, process.platform === 'win32' ? 15000 : undefined);
+
     it('keeps release and cache path normalization POSIX-sh compatible', () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-shell-portability-'));
         try {

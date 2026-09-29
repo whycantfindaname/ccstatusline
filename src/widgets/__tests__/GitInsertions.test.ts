@@ -1,11 +1,12 @@
-import { execFileSync } from 'child_process';
 import {
+    afterAll,
     beforeEach,
     describe,
     expect,
     it,
     vi
-} from 'vitest';
+} from 'bun:test';
+import { execFileSync } from 'child_process';
 
 import type { RenderContext } from '../../types/RenderContext';
 import { DEFAULT_SETTINGS } from '../../types/Settings';
@@ -19,15 +20,18 @@ import {
 import {
     WIDGET_GIT_CWD,
     clearGitChangeSnapshot,
-    primeGitChangeSnapshot
+    primeGitChangeSnapshot,
+    removeGitChangeFixture
 } from './helpers/git-change-snapshot';
 
-vi.mock('child_process', () => ({
+await vi.mock('child_process', () => ({
     execSync: vi.fn(),
     execFileSync: vi.fn(),
     spawn: vi.fn(),
     spawnSync: vi.fn()
 }));
+
+afterAll(removeGitChangeFixture);
 
 const mockExecFileSync = execFileSync as unknown as {
     mockImplementation: (impl: () => never) => void;

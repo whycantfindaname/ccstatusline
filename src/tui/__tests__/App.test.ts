@@ -1,11 +1,9 @@
-/* eslint-disable import-x/no-unresolved */
 import {
     describe,
     expect,
     it,
     mock
 } from 'bun:test';
-/* eslint-enable import-x/no-unresolved */
 import chalk from 'chalk';
 
 import {

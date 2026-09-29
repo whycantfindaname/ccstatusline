@@ -8,15 +8,14 @@ import {
 } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterAll } from 'vitest';
 
 import { resolveGitChangeRepo } from '../../../utils/git-change-cache';
 
 export const WIDGET_GIT_CWD = mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-widget-git-'));
 
-afterAll(() => {
+export function removeGitChangeFixture(): void {
     rmSync(WIDGET_GIT_CWD, { recursive: true, force: true });
-});
+}
 
 export function clearGitChangeSnapshot(cwd: string = WIDGET_GIT_CWD): void {
     if (cwd === WIDGET_GIT_CWD) {
