@@ -197,6 +197,7 @@
     ".codex/hooks/inject-workflow-state.py": "50349c8cb02ace96e6cbfd50206971be136aa98f86f7508406ef3197d3a2c96e",
     ".codex/hooks.json": "c16c9af7f6010bf4fabb64fd4bd497201d34583b96c665ea1d5739eed48b3fb5",
     ".codex/config.toml": "8f69ba913b8ecb9e9ee9a8a1e31a7a8103a351e95fa5eb4879f6554bb53adeb3",
-    ".trellis/.gitignore": "6fb87bc50e5ec28887f9ef9c64edf13b4cf6da881185be592bd83914ded954e4"
+    ".trellis/.gitignore": "6fb87bc50e5ec28887f9ef9c64edf13b4cf6da881185be592bd83914ded954e4",
+    "AGENTS.md": "c4f530220931994d65ef7fd3491d87224d6a8d9f4a77e4b4b9fa1656c174d216"
   }
 }
