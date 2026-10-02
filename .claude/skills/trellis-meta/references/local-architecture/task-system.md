@@ -112,7 +112,7 @@ python3 ./.trellis/scripts/task.py current --source
 python3 ./.trellis/scripts/task.py add-context <task> implement <file> <reason>
 python3 ./.trellis/scripts/task.py validate <task>
 python3 ./.trellis/scripts/task.py finish
-python3 ./.trellis/scripts/task.py archive <task>
+python3 ./.trellis/scripts/task.py archive <task> --no-commit
 ```
 
 When modifying the task system, the AI should prefer script commands to maintain structure. Edit JSON/Markdown directly only when scripts do not cover the need.

@@ -47,7 +47,7 @@ python3 ./.trellis/scripts/task.py create "<title>" --description "<what this ta
 python3 ./.trellis/scripts/task.py start <name>          # set active task (session-scoped when available)
 python3 ./.trellis/scripts/task.py current --source      # show active task and source
 python3 ./.trellis/scripts/task.py finish                # clear active task (triggers after_finish hooks)
-python3 ./.trellis/scripts/task.py archive <name>        # move to archive/{year-month}/
+python3 ./.trellis/scripts/task.py archive <name> --no-commit # move to archive/{year-month}/
 python3 ./.trellis/scripts/task.py list [--mine] [--status <s>]
 python3 ./.trellis/scripts/task.py list-archive
 
@@ -85,7 +85,7 @@ Records every AI session for cross-session tracking under `.trellis/workspace/<d
 - `index.md` — personal index (total sessions, last active).
 
 ```bash
-python3 ./.trellis/scripts/add_session.py --title "Title" --commit "hash" --summary "Summary"
+python3 ./.trellis/scripts/add_session.py --no-commit --title "Title" --commit "hash" --summary "Summary"
 ```
 
 ### Context Script
@@ -149,7 +149,7 @@ python3 ./.trellis/scripts/get_context.py --mode phase --step <X.Y>  # detailed 
 ```
 Phase 1: Plan    → classify, get task-creation consent, then write planning artifacts
 Phase 2: Execute → implement only after task status is in_progress
-Phase 3: Finish  → verify, update spec, commit, and wrap up
+Phase 3: Finish  → verify, update spec, resolve the commit decision, and wrap up
 ```
 
 ### Request Triage
@@ -236,7 +236,7 @@ Sub-agent dispatch protocol applies to all platforms and all sub-agents, includi
 [workflow-state:in_progress]
 Tools: `trellis-implement` / `trellis-research` name sub-agent roles dispatched through your platform's sub-agent mechanism, not skills the main session loads itself (on Claude Code: use the Task/Agent tool, never the Skill tool). `trellis-update-spec` is a skill. `trellis-check` exists as both; prefer the Agent/role form when verifying after code changes.
 On DeepSeek Harness, role instructions ship as collision-free `trellis-agent-implement` / `trellis-agent-check` / `trellis-agent-research` skills under `.dsh/skills/`. The main session must not load them itself: tell the child to load the matching role skill exactly once. If `trellis_wait` is available, use the default background mode, do independent work, then call `trellis_wait` once per dependent child id and consume each native settlement notice before entering the dependent gate. If it is unavailable, dispatch every child with `run_in_background: false` from the outset. Do not poll, sleep, or start a background child without an event-driven wait path.
-Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> resolve commit decision (Phase 3.4) -> `/trellis:finish-work`.
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
 [/workflow-state:in_progress]
@@ -247,7 +247,7 @@ Dispatch prompt starts with `Active task: <task path from task.py current>`. Rea
      instead of dispatching sub-agents. -->
 
 [workflow-state:in_progress-inline]
-Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> commit (Phase 3.4) -> `/trellis:finish-work`.
+Flow: `trellis-before-dev` -> edit -> `trellis-check` -> validation -> `trellis-update-spec` -> resolve commit decision (Phase 3.4) -> `/trellis:finish-work`.
 Do not dispatch implement/check sub-agents in inline mode.
 Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, plus relevant spec/research loaded by skills.
 [/workflow-state:in_progress-inline]
@@ -255,7 +255,7 @@ Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, p
 ### Phase 3: Finish
 - 3.2 Debug retrospective `[on demand]`
 - 3.3 Spec update `[required · once]`
-- 3.4 Commit changes `[required · once]`
+- 3.4 Resolve commit decision `[required · once]`
 - 3.5 Wrap-up reminder
 
 > Note: step 3.1 was folded into 2.2 (last-iteration full-scope check) and 3.4 (commit preamble). Numbering kept stable to avoid breaking external references.
@@ -269,7 +269,7 @@ Read context: `prd.md` -> `design.md if present` -> `implement.md if present`, p
      channel as the live blocks. -->
 
 [workflow-state:completed]
-Code committed. Run `/trellis:finish-work`; if dirty, return to Phase 3.4 first.
+Checks passed and the commit decision is resolved. Run `/trellis:finish-work` with no-commit bookkeeping; an explicit decision to leave owned changes uncommitted permits wrap-up with those paths preserved. If the decision is unresolved, ask in Phase 3.4 first.
 [/workflow-state:completed]
 
 ### Rules
@@ -570,7 +570,7 @@ If issues are found → fix → re-check, until green.
 
 [/codex-inline, Kilo, Antigravity, Devin]
 
-**Final pass (before Phase 3.4 commit)**: the last 2.2 of a task must run full-scope, not just on the latest implement chunk. List all affected packages with `python3 ./.trellis/scripts/get_context.py --mode packages`, then load each package's spec index Quality Check section. This catches cross-layer / multi-package issues a mid-iteration local 2.2 cannot.
+**Final pass (before Phase 3.4 commit decision)**: the last 2.2 of a task must run full-scope, not just on the latest implement chunk. List all affected packages with `python3 ./.trellis/scripts/get_context.py --mode packages`, then load each package's spec index Quality Check section. This catches cross-layer / multi-package issues a mid-iteration local 2.2 cannot.
 
 #### 2.3 Rollback `[on demand]`
 
@@ -602,57 +602,59 @@ Load the `trellis-update-spec` skill and review whether this task produced new k
 
 Update the docs under `.trellis/spec/` accordingly. Even if the conclusion is "nothing to update", walk through the judgment.
 
-#### 3.4 Commit changes `[required · once]`
+#### 3.4 Resolve commit decision `[required · once]`
 
-**Spec-sync preamble**: before drafting commits, ask: did this task fix a bug or surface non-obvious knowledge that should land in `.trellis/spec/` so future-you (or future-AI) doesn't repeat the mistake? If yes, return to Phase 3.3 first — spec writes belong in the same task's commit batch, not as a forgotten follow-up.
+**Spec-sync preamble**: review Phase 3.3 before preparing any approved commit;
+include task-owned spec changes in the same scoped plan.
 
-The AI drives a batched commit of this task's code changes so `/finish-work` can run cleanly afterwards. Goal: produce work commits FIRST, then bookkeeping (archive + journal) commits land after — never interleaved.
+The user decides whether this work is committed. Completing a task, passing
+checks, requesting finish-work, or supplying journal `--commit` evidence does
+not approve a commit. Reuse earlier explicit approval only for the same
+repository, action, and owned file scope; ask when that decision is unresolved.
+An explicit decision to leave changes uncommitted permits verified task
+completion and wrap-up with those paths preserved.
 
 **Step-by-step**:
 
-1. **Inspect dirty state**:
-   ```bash
-   git status --porcelain
-   ```
-   Snapshot every dirty path. If the working tree is clean, skip to 3.5.
+1. **Inspect dirty state** with `git status --porcelain`. Record task-owned
+   paths and pre-existing or parallel changes separately. If no owned changes
+   need a commit, continue to 3.5.
+2. **Prepare a scoped plan** when a commit is requested or the choice is
+   unresolved. Read `git log --oneline -5` for the local subject style; group
+   owned files by coherent change. Preserve unrelated files and list them
+   separately. Never include them by default or use blanket staging.
+3. **Resolve approval**. Show each proposed message and exact file list.
+   Reuse valid approval covering that plan; otherwise ask once whether to
+   commit it or leave the work uncommitted. Editing permission or publication
+   intent alone does not settle the local commit decision. Changes that expand
+   approved scope or materially alter the approved message need a new decision.
+4. **On approval**, follow the canonical provenance contract below and stage
+   only the approved files; commit each approved batch. Do not amend or push
+   in this step. Ignored governance files need an explicit tracking decision;
+   never force-add them automatically.
+5. **On decline or manual handling**, preserve all dirty paths, record the
+   user's decision, and continue to 3.5. Do not assume a later manual commit,
+   repeat the rejected plan, or wait for a clean working tree. Required checks
+   and acceptance still govern completion.
 
-2. **Learn commit style** from recent history (so drafted messages blend in):
-   ```bash
-   git log --oneline -5
-   ```
-   Note the prefix convention (`feat:` / `fix:` / `chore:` / `docs:` ...), language (中文/English), and length style.
-
-3. **Classify dirty files into two groups**:
-   - **AI-edited this session** — files you wrote/edited via Edit/Write/Bash tool calls in this session. You know what changed and why.
-   - **Unrecognized** — dirty files you did NOT touch this session (could be the user's manual edits, leftover WIP from a previous session, or unrelated work). Do NOT silently include these.
-
-4. **Draft a commit plan**. Group AI-edited files into logical commits (1 commit per coherent change unit, not 1 commit per file). Each entry: `<commit message>` + file list. List unrecognized files separately at the bottom.
-
-5. **Present the plan once, ask for one-shot confirmation**. Format:
-   ```
-   Proposed commits (in order):
-     1. <message>
-        - <file>
-        - <file>
-     2. <message>
-        - <file>
-
-   Unrecognized dirty files (NOT in any commit — confirm include/exclude):
-     - <file>
-     - <file>
-
-   Reply 'ok' / '行' to execute. Reply with edits, or '我自己来' / 'manual' to abort.
-   ```
-
-6. **On confirmation**: run `git add <files>` + `git commit -m "<msg>"` for each batch in order. Do not amend. Do not push.
-
-7. **On rejection** (user replies "不行" / "我自己来" / "manual" / any pushback on the plan): stop. Do not attempt a second plan. The user will commit by hand; you skip ahead to 3.5 once they confirm.
+For approved commits, read **Commit provenance** in
+`.trellis/spec/backend/quality-guidelines.md` from Agent Infra's canonical
+`main` worktree. Resolve that worktree from the existing `agent-infra` entry
+in `manifests/workspace-repositories.json` and the current workspace root;
+do not hardcode another host's checkout or copy the trailer format here.
+Use the actual machine and Agent, and complete the fix, commit, and separately
+authorized push on the machine that made the fix. This reference grants no
+commit or push approval.
 
 **Rules**:
-- No `git commit --amend` anywhere — three-stage three-commit flow (work commits → archive commit → journal commit).
-- Never push to remote in this step.
-- If the user wants different message wording but accepts the file grouping, edit the message and re-confirm once — but if they reject the grouping, exit to manual mode.
-- The batched plan is one prompt; do not prompt per commit.
+- Archive and journal operations use `--no-commit`; keep
+  `session_auto_commit: false` in `.trellis/config.yaml`.
+- No automatic bookkeeping commits are part of task completion. If the user
+  separately approves committing those records, include their exact paths in
+  the scoped plan and apply the same provenance contract.
+- Push, tags, history rewrite, and publication retain their separate approval
+  requirements. Report saved, verified, committed, and published states as
+  actually observed.
 
 #### 3.5 Wrap-up reminder
 
@@ -669,7 +671,7 @@ This section is for developers who want to modify the Trellis workflow itself. A
 Edit the corresponding step's walkthrough body in the Phase 1 / 2 / 3 sections above. Critical invariants:
 - No active task must triage first and ask for task-creation consent before creating a Trellis task.
 - Planning must distinguish lightweight PRD-only tasks from complex tasks that require `prd.md`, `design.md`, and `implement.md` before start.
-- Every required execution path must keep the Phase 3.4 commit reminder reachable before `/trellis:finish-work`.
+- Every required execution path must keep the Phase 3.4 commit-decision reminder reachable before `/trellis:finish-work`.
 
 All tag blocks live in the `## Phase Index` section above, immediately after each phase summary:
 

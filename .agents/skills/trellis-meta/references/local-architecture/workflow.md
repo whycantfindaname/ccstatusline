@@ -59,7 +59,7 @@ Common changes:
 | Add a phase | Update the Phase Index, phase body, routing, and state blocks. |
 | Change task creation policy | Update the `no_task` state block and Phase 1 description. |
 | Change the default implementation/check path | Update Phase 2 and skill routing. |
-| Change the wrap-up flow | Update Phase 3 and `finish-work` related descriptions. Note the current split: Phase 3.4 = AI-driven code commits (batched, user-confirmed), Phase 3.5 = `/finish-work` (archive + record session). `/finish-work` refuses to run if the working tree is dirty. |
+| Change the wrap-up flow | Update Phase 3 and `finish-work` related descriptions. Phase 3.4 resolves the user's scoped commit decision; reuse valid approval for the same repository, action, and owned paths, and ask when unresolved. An explicit decline or manual handling preserves dirty paths and permits verified closeout without assuming a later commit. Phase 3.5 archives accepted tasks and records the journal with `--no-commit` and `session_auto_commit: false`; compare bookkeeping with the baseline and preserve pre-existing and concurrent changes. Any separately approved bookkeeping commit uses the same exact-path approval and canonical provenance rules in workflow Phase 3.4. |
 | Change platform differences | Update routing descriptions grouped by platform. |
 
 After editing, make the AI reread `.trellis/workflow.md`; do not assume the flow from the old conversation is still valid.

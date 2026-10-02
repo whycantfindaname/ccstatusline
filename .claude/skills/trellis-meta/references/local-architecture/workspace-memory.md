@@ -37,13 +37,13 @@ This creates `.trellis/.developer` and the corresponding workspace directory. Th
 Common command for recording a session:
 
 ```bash
-python3 ./.trellis/scripts/add_session.py \
+python3 ./.trellis/scripts/add_session.py --no-commit \
   --title "Session title" \
   --summary "What changed" \
   --commit "abc1234"
 ```
 
-Planning or review work without a commit can also be recorded by using `--no-commit` or an empty commit value.
+Use `--no-commit` for every journal write and keep `session_auto_commit: false` in `.trellis/config.yaml`. `--commit` records actual existing commit hashes as evidence and never grants commit approval. If the work remains uncommitted, omit `--commit` and describe the preserved paths and user decision in the summary; an empty evidence value does not control auto-commit. Follow workflow Phase 3.4 for the user's commit decision and canonical provenance reference.
 
 ## Relationship Between Workspace Memory And Tasks
 
