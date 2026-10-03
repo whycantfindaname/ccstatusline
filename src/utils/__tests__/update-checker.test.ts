@@ -32,7 +32,7 @@ describe('update checker', () => {
         const result = buildUpdateCheckResult({
             currentVersion: '2.2.13',
             latestVersion: '2.2.13',
-            installedCommand: CCSTATUSLINE_COMMANDS.NPM,
+            installedCommand: CCSTATUSLINE_COMMANDS.AUTO_NPX,
             commandAvailability: ALL_AVAILABLE
         });
 
@@ -62,7 +62,7 @@ describe('update checker', () => {
     it('returns registry failure when the registry request fails', async () => {
         const result = await checkForUpdates({
             currentVersion: '2.2.13',
-            installedCommand: CCSTATUSLINE_COMMANDS.NPM,
+            installedCommand: CCSTATUSLINE_COMMANDS.AUTO_NPX,
             commandAvailability: ALL_AVAILABLE,
             latestVersionFetcher: () => Promise.reject(new Error('network unavailable'))
         });
@@ -192,7 +192,7 @@ describe('update checker', () => {
         const result = buildUpdateCheckResult({
             currentVersion: '2.2.13',
             latestVersion: '2.3.0',
-            installedCommand: CCSTATUSLINE_COMMANDS.BUNX,
+            installedCommand: CCSTATUSLINE_COMMANDS.AUTO_BUNX,
             commandAvailability: ALL_AVAILABLE
         });
 
@@ -201,7 +201,7 @@ describe('update checker', () => {
             return;
         }
         expect(result.actions).toEqual([]);
-        expect(result.autoUpdateLaunchCommand).toBe(CCSTATUSLINE_COMMANDS.BUNX);
+        expect(result.autoUpdateLaunchCommand).toBe(CCSTATUSLINE_COMMANDS.AUTO_BUNX);
     });
 
     it('offers both global commands for unknown global installs and marks unavailable managers', () => {

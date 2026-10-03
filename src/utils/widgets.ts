@@ -20,7 +20,6 @@ export { getMatchSegments } from './fuzzy';
 const widgetRegistry = new Map<WidgetItemType, Widget>(
     WIDGET_MANIFEST.map((entry): [WidgetItemType, Widget] => [entry.type, entry.create()])
 );
-const layoutWidgetTypes = new Set<WidgetItemType>(LAYOUT_WIDGET_MANIFEST.map(entry => entry.type));
 
 export const LEGACY_WIDGET_TYPE_ALIASES: Record<string, WidgetItemType> = { 'git-pr': 'git-review' };
 
@@ -124,10 +123,4 @@ export function filterWidgetCatalog(catalog: WidgetCatalogEntry[], category: str
     }));
 
     return filterFuzzySearchRecords(records, query);
-}
-
-export function isKnownWidgetType(type: string): boolean {
-    const resolved = resolveLegacyWidgetType(type);
-    return widgetRegistry.has(resolved)
-        || layoutWidgetTypes.has(resolved);
 }

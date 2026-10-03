@@ -29,11 +29,7 @@ const mkdir = fs.promises.mkdir;
 export const CCSTATUSLINE_COMMANDS = {
     AUTO_NPX: 'npx -y ccstatusline@latest',
     AUTO_BUNX: 'bunx -y ccstatusline@latest',
-    GLOBAL: 'ccstatusline',
-    // Backward-compatible names for existing callers/tests.
-    NPM: 'npx -y ccstatusline@latest',
-    BUNX: 'bunx -y ccstatusline@latest',
-    SELF_MANAGED: 'ccstatusline'
+    GLOBAL: 'ccstatusline'
 };
 
 export const PINNED_INSTALL_COMMANDS = {

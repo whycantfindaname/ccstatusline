@@ -81,32 +81,32 @@ afterAll(() => {
 });
 
 describe('isKnownCommand', () => {
-    it('should match exact NPM command', () => {
-        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.NPM)).toBe(true);
+    it('should match exact AUTO_NPX command', () => {
+        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.AUTO_NPX)).toBe(true);
     });
 
-    it('should match exact BUNX command', () => {
-        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.BUNX)).toBe(true);
+    it('should match exact AUTO_BUNX command', () => {
+        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.AUTO_BUNX)).toBe(true);
     });
 
-    it('should match exact SELF_MANAGED command', () => {
-        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.SELF_MANAGED)).toBe(true);
+    it('should match exact GLOBAL command', () => {
+        expect(isKnownCommand(CCSTATUSLINE_COMMANDS.GLOBAL)).toBe(true);
     });
 
-    it('should match NPM command with --config and simple path', () => {
-        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.NPM} --config /tmp/settings.json`)).toBe(true);
+    it('should match AUTO_NPX command with --config and simple path', () => {
+        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config /tmp/settings.json`)).toBe(true);
     });
 
-    it('should match BUNX command with --config and quoted path with spaces', () => {
-        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.BUNX} --config '/my path/settings.json'`)).toBe(true);
+    it('should match AUTO_BUNX command with --config and quoted path with spaces', () => {
+        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.AUTO_BUNX} --config '/my path/settings.json'`)).toBe(true);
     });
 
     it('should match command with --config and quoted path with parens', () => {
-        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.NPM} --config '/my(path)/settings.json'`)).toBe(true);
+        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config '/my(path)/settings.json'`)).toBe(true);
     });
 
     it('should match command with --config and double-quoted Windows path', () => {
-        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.NPM} --config "C:\\Users\\Alice\\My Settings\\settings.json"`)).toBe(true);
+        expect(isKnownCommand(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config "C:\\Users\\Alice\\My Settings\\settings.json"`)).toBe(true);
     });
 
     it('should not match unknown commands', () => {
@@ -140,14 +140,14 @@ describe('isKnownCommand', () => {
 
 describe('classifyInstallation', () => {
     it('classifies existing npx latest commands as auto-update npm', () => {
-        expect(classifyInstallation(CCSTATUSLINE_COMMANDS.NPM)).toEqual({
+        expect(classifyInstallation(CCSTATUSLINE_COMMANDS.AUTO_NPX)).toEqual({
             method: 'auto-update',
             packageManager: 'npm'
         });
     });
 
     it('classifies existing bunx latest commands as auto-update bun', () => {
-        expect(classifyInstallation(CCSTATUSLINE_COMMANDS.BUNX)).toEqual({
+        expect(classifyInstallation(CCSTATUSLINE_COMMANDS.AUTO_BUNX)).toEqual({
             method: 'auto-update',
             packageManager: 'bun'
         });
@@ -202,42 +202,42 @@ describe('buildCommand via installStatusLine', () => {
     it('should use base command when no custom config path', async () => {
         config.initConfigPath();
         await installStatusLine({ commandMode: 'auto-npx' });
-        expect(readInstalledCommand()).toBe(CCSTATUSLINE_COMMANDS.NPM);
+        expect(readInstalledCommand()).toBe(CCSTATUSLINE_COMMANDS.AUTO_NPX);
     });
 
     it('should append --config with simple path (no quoting needed)', async () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         vi.spyOn(config, 'getConfigPath').mockReturnValue('/tmp/settings.json');
         await installStatusLine({ commandMode: 'auto-npx' });
-        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.NPM} --config /tmp/settings.json`);
+        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config /tmp/settings.json`);
     });
 
     it('should quote path with spaces', async () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         vi.spyOn(config, 'getConfigPath').mockReturnValue('/my path/settings.json');
         await installStatusLine({ commandMode: 'auto-npx' });
-        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.NPM} --config '/my path/settings.json'`);
+        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config '/my path/settings.json'`);
     });
 
     it('should quote path with parentheses', async () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         vi.spyOn(config, 'getConfigPath').mockReturnValue('/my(path)/settings.json');
         await installStatusLine({ commandMode: 'auto-npx' });
-        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.NPM} --config '/my(path)/settings.json'`);
+        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config '/my(path)/settings.json'`);
     });
 
     it('should escape embedded single quotes in path', async () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         vi.spyOn(config, 'getConfigPath').mockReturnValue('/my\'path/settings.json');
         await installStatusLine({ commandMode: 'auto-npx' });
-        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.NPM} --config '/my'\\''path/settings.json'`);
+        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config '/my'\\''path/settings.json'`);
     });
 
     it('should use bunx command when commandMode is auto-bunx', async () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         vi.spyOn(config, 'getConfigPath').mockReturnValue('/my path/settings.json');
         await installStatusLine({ commandMode: 'auto-bunx' });
-        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.BUNX} --config '/my path/settings.json'`);
+        expect(readInstalledCommand()).toBe(`${CCSTATUSLINE_COMMANDS.AUTO_BUNX} --config '/my path/settings.json'`);
     });
 
     it('should generate global command with custom config path', () => {
@@ -277,7 +277,7 @@ describe('buildCommand via installStatusLine', () => {
 
         await installStatusLine({ commandMode: 'auto-npx' });
 
-        const installedCommand = `${CCSTATUSLINE_COMMANDS.NPM} --config ${configPath}`;
+        const installedCommand = `${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config ${configPath}`;
         const claudeSettings = await loadClaudeSettings();
         expect(claudeSettings.statusLine?.command).toBe(installedCommand);
         const hooks = (claudeSettings.hooks ?? {}) as Record<string, unknown[]>;
@@ -343,7 +343,7 @@ describe('installStatusLine refreshInterval', () => {
         writeRawClaudeSettings(JSON.stringify({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0,
                 refreshInterval: 5
             }
@@ -362,7 +362,7 @@ describe('refreshInterval', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0
             }
         });
@@ -373,7 +373,7 @@ describe('refreshInterval', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0,
                 refreshInterval: 5
             }
@@ -385,7 +385,7 @@ describe('refreshInterval', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0
             }
         });
@@ -400,7 +400,7 @@ describe('refreshInterval', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0,
                 refreshInterval: 10
             }
@@ -435,14 +435,14 @@ describe('backup and error handling behavior', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0
             }
         });
 
         const settingsPath = getClaudeSettingsPath();
         const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { statusLine?: { command?: string } };
-        expect(saved.statusLine?.command).toBe(CCSTATUSLINE_COMMANDS.NPM);
+        expect(saved.statusLine?.command).toBe(CCSTATUSLINE_COMMANDS.AUTO_NPX);
         expect(fs.existsSync(`${settingsPath}.bak`)).toBe(true);
 
         const backup = JSON.parse(fs.readFileSync(`${settingsPath}.bak`, 'utf-8')) as { statusLine?: { command?: string } };
@@ -538,7 +538,7 @@ describe('backup and error handling behavior', () => {
         writeRawClaudeSettings(JSON.stringify({
             statusLine: {
                 type: 'command',
-                command: CCSTATUSLINE_COMMANDS.NPM,
+                command: CCSTATUSLINE_COMMANDS.AUTO_NPX,
                 padding: 0
             },
             hooks: {
@@ -546,7 +546,7 @@ describe('backup and error handling behavior', () => {
                     {
                         _tag: 'ccstatusline-managed',
                         matcher: 'Skill',
-                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.NPM} --hook` }]
+                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.AUTO_NPX} --hook` }]
                     },
                     {
                         matcher: 'Other',
@@ -556,7 +556,7 @@ describe('backup and error handling behavior', () => {
                 UserPromptSubmit: [
                     {
                         _tag: 'ccstatusline-managed',
-                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.NPM} --hook` }]
+                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.AUTO_NPX} --hook` }]
                     }
                 ]
             }
@@ -595,7 +595,7 @@ describe('backup and error handling behavior', () => {
         await saveClaudeSettings({
             statusLine: {
                 type: 'command',
-                command: `${CCSTATUSLINE_COMMANDS.NPM} --config /tmp/settings.json`
+                command: `${CCSTATUSLINE_COMMANDS.AUTO_NPX} --config /tmp/settings.json`
             }
         });
 

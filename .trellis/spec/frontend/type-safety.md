@@ -25,7 +25,7 @@ Use `safeParse` when invalid user data should produce a recoverable result and
 
 `WidgetItemSchema.type` is intentionally `string`, and `WidgetItemType` remains
 `string`, so configs containing newer or unknown widget IDs can be loaded.
-Runtime lookup uses `getWidget()`/`isKnownWidgetType()` in
+Runtime lookup uses `getWidget()` in
 `src/utils/widgets.ts`. Do not narrow the schema to a closed enum unless the
 product explicitly abandons this compatibility contract.
 

@@ -15,7 +15,6 @@ import {
     getWidget,
     getWidgetCatalog,
     getWidgetCatalogCategories,
-    isKnownWidgetType,
     type WidgetCatalogEntry
 } from '../widgets';
 
@@ -119,13 +118,6 @@ describe('widget catalog', () => {
 
         expect(new Set(types).size).toBe(types.length);
     });
-
-    it('recognizes known widget and layout types', () => {
-        expect(isKnownWidgetType('model')).toBe(true);
-        expect(isKnownWidgetType('separator')).toBe(true);
-        expect(isKnownWidgetType('flex-separator')).toBe(true);
-        expect(isKnownWidgetType('unknown-widget-type')).toBe(false);
-    });
 });
 
 describe('legacy widget type aliases', () => {
@@ -134,10 +126,6 @@ describe('legacy widget type aliases', () => {
         const legacy = getWidget('git-pr');
         expect(canonical).not.toBeNull();
         expect(legacy).toBe(canonical);
-    });
-
-    it('treats legacy git-pr as a known widget type', () => {
-        expect(isKnownWidgetType('git-pr')).toBe(true);
     });
 
     it('does not list the legacy git-pr type in the catalog', () => {
