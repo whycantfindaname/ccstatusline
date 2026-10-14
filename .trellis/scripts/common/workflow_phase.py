@@ -171,7 +171,9 @@ def resolve_effective_platform(platform: str, config: dict) -> str:
     namespaced name (e.g. ``[codex-sub-agent, ...]`` or ``[codex-inline, Kilo,
     Antigravity, Devin]``).
 
-    Native Codex context injection supports the ``auto`` default. Invalid
+    The legacy ``codex-sub-agent`` label is kept for custom workflow compatibility;
+    its native workflow blocks choose ownership by actual benefit, not mandatory
+    delegation. Native context injection is available when auto delegates. Invalid
     explicit values fall back to ``inline`` safely; this renderer deliberately
     does not warn because it can run in normal CLI output flows.
 

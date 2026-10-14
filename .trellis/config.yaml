@@ -125,13 +125,15 @@ channel:
 #-------------------------------------------------------------------------------
 # Codex (dispatch behavior)
 #-------------------------------------------------------------------------------
-# Codex-only knob; other platforms ignore it. Default ("auto") dispatches
-# trellis-implement / trellis-check / trellis-research sub-agents. This does
-# not rely on inherited parent transcripts: `fork_turns` remains
-# caller-controlled, while Codex's native SubagentStart hook injects task
-# context when trusted and child-side loading remains the fallback when it is
-# unavailable. Set to "inline" only to keep implementation and checks in the
-# main session. "sub-agent" remains a backwards-compatible alias for "auto".
+# Codex-only knob; other platforms ignore it. Default ("auto") chooses ownership
+# by actual benefit. Continuous, tightly coupled work stays in the main session;
+# independent parallel work, useful context isolation, specialized capability,
+# or independent review can justify a bounded Trellis sub-agent assignment.
+# Planning completion or an available role alone does not require delegation.
+# For delegated work, native SubagentStart injects task context when trusted,
+# with child-side loading as fallback; `fork_turns` remains caller-controlled.
+# "inline" keeps implementation/checks in the main session. Explicit user inline
+# requests take precedence. "sub-agent" remains a legacy alias for "auto".
 # Invalid explicit values safely use inline mode.
 #
 # In "auto" mode, dispatched sub-agents inherit the main session's model

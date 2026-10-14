@@ -321,6 +321,8 @@ def _resolve_codex_dispatch_mode(config: dict) -> str:
     mode = "auto"
     if isinstance(config, dict):
         codex_cfg = config.get("codex")
+        if codex_cfg is not None and not isinstance(codex_cfg, dict):
+            return "inline"
         if isinstance(codex_cfg, dict):
             cfg_mode = str(codex_cfg.get("dispatch_mode", mode)).strip().lower()
             if cfg_mode == "inline":
@@ -333,7 +335,7 @@ def _resolve_codex_dispatch_mode(config: dict) -> str:
 
 
 def _codex_mode_banner(config: dict) -> str:
-    """Describe context-loading defaults; project rules decide delegation.
+    """Describe adaptive ownership and the explicit inline choice.
 
     ``sub-agent`` remains an alias for ``auto``. Invalid explicit values use
     ``inline``. Neither mode overrides the project's ownership decisions.
@@ -343,12 +345,14 @@ def _codex_mode_banner(config: dict) -> str:
         meaning = (
             "auto: native Codex context injection is available for delegated work, "
             "with child-side loading as fallback. Follow project workflow and "
-            "routing rules to choose main-session or sub-agent ownership."
+            "routing rules to choose main-session or sub-agent ownership. "
+            "Keep continuous, tightly coupled work in the main session; delegate "
+            "only for concrete parallel, isolation, specialized capability, or review benefit."
         )
     else:
         meaning = (
             "inline: the main session loads context and implements/checks directly "
-            "by default. Project workflow and routing rules may justify independent delegation."
+            "without dispatching implement/check sub-agents."
         )
     return f"<codex-mode>{meaning}</codex-mode>"
 
@@ -358,18 +362,20 @@ def resolve_breadcrumb_key(
 ) -> str:
     """Pick the breadcrumb tag key based on Codex dispatch_mode.
 
-    Codex defaults to ``auto`` and therefore uses the ordinary ``<status>``
-    breadcrumb for native SubagentStart dispatch with child-side fallback;
-    it does not depend on an inherited parent transcript. ``inline`` selects
-    the parallel ``<status>-inline`` tag; ``sub-agent`` remains an alias for
-    ``auto``. Invalid explicit values fall back to inline without per-turn
-    warnings.
+    For planning/execution, Codex defaults to the adaptive ``<status>-auto``
+    breadcrumb. ``inline`` selects ``<status>-inline``; ``sub-agent`` remains
+    an alias for ``auto``. Invalid explicit values use inline without per-turn
+    warnings. Inline keeps its existing suffix for every status, including
+    user-defined tags; auto leaves non-active statuses unchanged.
 
     Non-codex platforms return the plain status unchanged.
     """
     if platform == "codex":
         mode = _resolve_codex_dispatch_mode(config)
-        return f"{status}-inline" if mode == "inline" else status
+        if mode == "inline":
+            return f"{status}-inline"
+        if status in ("planning", "in_progress"):
+            return f"{status}-auto"
     return status
 
 
