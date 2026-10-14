@@ -123,11 +123,13 @@ python3 ./.trellis/scripts/get_context.py --mode phase --step <X.Y>  # detailed 
     [workflow-state:no_task]      → no active task; before Phase 1
     [workflow-state:task_error]   → active task record is unreadable; repair it before continuing
     [workflow-state:planning]     → all of Phase 1 (status='planning')
+    [workflow-state:planning-auto] → Codex adaptive auto variant of Phase 1
     [workflow-state:planning-inline] → Codex inline variant of Phase 1
     [workflow-state:in_progress]  → Phase 2 + Phase 3.2-3.4
                                     (status stays 'in_progress' from
                                     task.py start until task.py archive)
     [workflow-state:in_progress-inline] → Codex inline variant of Phase 2/3
+    [workflow-state:in_progress-auto] → Codex adaptive auto variant of Phase 2/3
     [workflow-state:completed]    → currently DEAD: cmd_archive flips
                                     status and moves the dir in the same
                                     call, so the resolver loses the
@@ -207,6 +209,14 @@ Multi-deliverable scope: consider a parent task plus independently verifiable ch
 Sub-agent mode: curate `implement.jsonl` and `check.jsonl` as spec/research manifests before start.
 [/workflow-state:planning]
 
+[workflow-state:planning-auto]
+Load `trellis-brainstorm`; stay in planning.
+Lightweight: `prd.md` can be enough. Complex: finish `prd.md`, `design.md`, and `implement.md`; ask for review before `task.py start`.
+Multi-deliverable scope: consider a parent task plus independently verifiable child tasks; dependencies must be written in child artifacts, not implied by tree position.
+Auto mode: curate `implement.jsonl` and `check.jsonl` as task context before start. Their presence does not require delegation.
+Continuous, tightly coupled work stays in the main session. Delegate only for concrete independent parallel work, useful context isolation, specialized capability, or independent review. Planning completion alone is not a reason to dispatch.
+[/workflow-state:planning-auto]
+
 <!-- Per-turn breadcrumb: shown throughout Phase 1 when codex.dispatch_mode=inline.
      Codex-only opt-in alternate to [workflow-state:planning]. The main agent
      edits code directly in Phase 2, so jsonl curation is skipped —
@@ -240,6 +250,15 @@ Flow: `trellis-implement` -> `trellis-check` -> `trellis-update-spec` -> resolve
 Main-session default: dispatch implement/check sub-agents. Sub-agent self-exemption: if already running as `trellis-implement`, do NOT spawn another `trellis-implement` or `trellis-check`; if already running as `trellis-check`, do NOT spawn another `trellis-check` or `trellis-implement`. Dispatch is main session only.
 Dispatch prompt starts with `Active task: <task path from task.py current>`. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
 [/workflow-state:in_progress]
+
+[workflow-state:in_progress-auto]
+Auto mode: choose ownership by actual benefit; respect an explicit user request to continue inline.
+Continuous, tightly coupled work stays in the main session. Delegate only for concrete independent parallel work, useful context isolation, specialized capability, or independent review. Task complexity, planning completion, a new phase, or an available role alone is not a reason to dispatch.
+Main-session flow: `trellis-before-dev` -> edit -> `trellis-check` skill -> validation -> `trellis-update-spec` -> commit decision (Phase 3.4) -> `/trellis:finish-work`.
+When delegation has concrete benefit, use the existing `trellis-implement`, `trellis-check`, or `trellis-research` role with a bounded assignment and one writer per scope. The parent continues independent work and waits only when it needs the result; do not hand off a whole serial phase merely to wait.
+Dispatch prompt starts with `Active task: <task path from task.py current>`. Native Codex `SubagentStart` injects context with child-side pull fallback. Read context: jsonl entries -> `prd.md` -> `design.md if present` -> `implement.md if present`.
+Sub-agent self-exemption: if already running as `trellis-implement` or `trellis-check`, perform the assigned work directly; do not spawn another implement/check agent. Dispatch is main session only.
+[/workflow-state:in_progress-auto]
 
 <!-- Per-turn breadcrumb: shown while status='in_progress' when
      codex.dispatch_mode=inline. Codex-only opt-in alternate to
@@ -284,13 +303,23 @@ Checks passed and the commit decision is resolved. Run `/trellis:finish-work` wi
 
 When a user request matches one of these intents inside an active task, route first, then load the detailed phase step if needed.
 
-[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
 
 - Planning or unclear requirements -> `trellis-brainstorm`.
 - `in_progress` implementation/check -> dispatch `trellis-implement` / `trellis-check`.
 - Repeated debugging -> `trellis-break-loop`; spec updates -> `trellis-update-spec`.
 
-[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[/Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+
+[codex-sub-agent]
+
+- Planning or unclear requirements -> `trellis-brainstorm`.
+- Continuous, tightly coupled work stays in the main session: `trellis-before-dev` -> edit -> `trellis-check` skill.
+- Delegate only for concrete independent parallel work, useful context isolation, specialized capability, or independent review. A single child and independent parent work can provide parallelism; no child-count quota is needed.
+- Keep one writer per scope, respect explicit inline requests, and preserve the review and commit gates. Planning completion or a phase transition does not require a new agent.
+- Repeated debugging -> `trellis-break-loop`; spec updates -> `trellis-update-spec`.
+
+[/codex-sub-agent]
 
 [codex-inline, Kilo, Antigravity, Devin]
 
@@ -365,7 +394,7 @@ Return to this step whenever requirements change and revise the relevant artifac
 
 Research can happen at any time during requirement exploration. It isn't limited to local code — you can use any available tool (MCP servers, skills, web search, etc.) to look up external information, including third-party library docs, industry practices, API references, etc.
 
-[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
 
 Spawn the research sub-agent:
 
@@ -374,7 +403,13 @@ Spawn the research sub-agent:
 - **Key requirement**: Research output MUST be persisted to `{TASK_DIR}/research/`
 - **DeepSeek Harness**: tell the child to load `trellis-agent-research` exactly once. If `trellis_wait` is available, use the default continuable background mode, dispatch independent questions concurrently when useful, continue unrelated work, then call `trellis_wait` once per child id and consume each settlement notice before advancing. Without `trellis_wait`, dispatch each required child with `run_in_background: false`; do not poll or sleep.
 
-[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[/Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+
+[codex-sub-agent]
+
+Apply the auto ownership criteria: investigate coupled questions in the main session. Delegate a bounded question to `trellis-research` only for independent parallel work, useful context isolation, or specialized capability. Start any dispatch prompt with `Active task: <task path>`. Either owner saves findings under `{TASK_DIR}/research/`; research does not require a child.
+
+[/codex-sub-agent]
 
 [codex-inline, Kilo, Antigravity, Devin]
 
@@ -414,6 +449,8 @@ Curate `implement.jsonl` and `check.jsonl` so the Phase 2 sub-agents get the rig
 - `check.jsonl` → specs for the check sub-agent (quality guidelines, check conventions, same research if needed)
 
 These manifests do not replace `implement.md`. `implement.md` is the human-readable execution plan for a complex task; jsonl files only list context files to inject or load.
+
+For Codex auto, curate these manifests as available task context regardless of the later ownership choice. Main-session work reads the relevant specs/research through `trellis-before-dev`; the existence of manifests is not a reason to launch an agent.
 
 **How to discover relevant specs**:
 
@@ -485,7 +522,7 @@ Goal: turn reviewed planning artifacts into code that passes quality checks.
 
 #### 2.1 Implement `[required · repeatable]`
 
-[Claude Code, Cursor, OpenCode, codex-sub-agent, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]
+[Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]
 
 Spawn the implement sub-agent:
 
@@ -496,9 +533,21 @@ Spawn the implement sub-agent:
 The platform hook/plugin auto-handles:
 - Reads `implement.jsonl` and injects referenced spec/research files into the agent prompt
 - Injects `prd.md`, `design.md` if present, and `implement.md` if present
-- For Codex, `SubagentStart` supplies native context injection; the agent profile keeps child-side loading as the fallback
 
-[/Claude Code, Cursor, OpenCode, codex-sub-agent, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]
+[/Claude Code, Cursor, OpenCode, CodeBuddy, Droid, Pi, ZCode, Snow, Oh My Pi]
+
+[codex-sub-agent]
+
+Apply the auto ownership criteria before assigning implementation. Continuous, tightly coupled work stays in the main session; an explicit user request to continue inline takes precedence.
+
+1. Load the `trellis-before-dev` skill and read `prd.md`, `design.md` if present, `implement.md` if present, and relevant spec/research context.
+2. Implement directly when continuity and shared context matter. Run the required lint, type-check, and tests.
+3. Delegate only a bounded assignment with concrete independent parallel work, useful context isolation, or specialized capability. Use `trellis-implement` with one writer per scope. The parent continues independent work and waits only when it needs the result.
+
+**Dispatch prompt guard**: if delegating, start with `Active task: <task path>`, then state that the child is already the `trellis-implement` sub-agent and must implement directly, not spawn another `trellis-implement` / `trellis-check`.
+For Codex, `SubagentStart` supplies native context injection from `implement.jsonl`, `prd.md`, optional `design.md`, and optional `implement.md`; the agent profile keeps child-side loading as the fallback.
+
+[/codex-sub-agent]
 
 [Gemini, Qoder, Copilot, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
 
@@ -541,7 +590,7 @@ The platform prelude auto-handles the context load requirement:
 
 #### 2.2 Quality check `[required · repeatable]`
 
-[Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
 
 Spawn the check sub-agent:
 
@@ -557,7 +606,17 @@ The check agent's job:
 - Run lint and typecheck to verify
 - A required check that cannot run, is skipped, or exits non-zero is blocked/failed, never passed. Do not weaken or rewrite acceptance criteria to advance the workflow.
 
-[/Claude Code, Cursor, OpenCode, codex-sub-agent, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+[/Claude Code, Cursor, OpenCode, Kiro, Gemini, Qoder, CodeBuddy, Copilot, Droid, Pi, Oh My Pi, ZCode, Snow, Reasonix, Trae, Grok, Kimi Code, DeepSeek Harness]
+
+[codex-sub-agent]
+
+Apply the auto ownership criteria again; reaching the check phase does not require a new agent. Load the `trellis-check` skill for main-session verification against task artifacts and specs, including lint, type-check, tests, and cross-layer consistency. Fix findings and recheck.
+
+Use the `trellis-check` role only when a bounded independent review or other concrete delegation benefit warrants it. Respect its write scope and the user's review-only constraints. Start the dispatch prompt with `Active task: <task path>` and state that the child is already the `trellis-check` sub-agent and must review/fix directly, not spawn another `trellis-check` / `trellis-implement`. Native `SubagentStart` and the child-side fallback load `check.jsonl` and task artifacts.
+
+A required check that cannot run, is skipped, or exits non-zero is blocked/failed, never passed. The main session remains responsible for integration and final acceptance.
+
+[/codex-sub-agent]
 
 [codex-inline, Kilo, Antigravity, Devin]
 
@@ -680,8 +739,10 @@ All tag blocks live in the `## Phase Index` section above, immediately after eac
 | No active task (before Phase 1) | `[workflow-state:no_task]` (after the Phase Index ASCII art) |
 | Active task record unreadable | `[workflow-state:task_error]` (repair the existing task before continuing) |
 | All of Phase 1 (task created → ready for implementation) | `[workflow-state:planning]` (after Phase 1 summary) |
+| Codex auto Phase 1 | `[workflow-state:planning-auto]` |
 | Codex inline Phase 1 | `[workflow-state:planning-inline]` |
 | Phase 2 + Phase 3.2–3.4 (implementation + check + wrap-up) | `[workflow-state:in_progress]` (after Phase 2 summary) |
+| Codex auto Phase 2 + Phase 3.2–3.4 | `[workflow-state:in_progress-auto]` |
 | Codex inline Phase 2 + Phase 3.2–3.4 | `[workflow-state:in_progress-inline]` |
 | After Phase 3.5 (archived) | `[workflow-state:completed]` (after Phase 3 summary; **currently DEAD**) |
 
