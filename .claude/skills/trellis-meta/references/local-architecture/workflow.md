@@ -22,10 +22,12 @@ Each phase contains numbered steps, such as `1.3 Configure context`. These numbe
 
 ## Skill Routing
 
-`workflow.md` separates routing by platform capability:
+`workflow.md` separates routing by platform and the selected execution mode:
 
-- Platforms with sub-agent support: dispatch `trellis-implement` by default for implementation and `trellis-check` for checking.
-- Platforms without sub-agent support: the main session reads skills such as `trellis-before-dev`, then executes directly.
+- Codex `auto` (including the legacy `sub-agent` alias) chooses ownership by actual benefit. Keep continuous, tightly coupled work in the main session. Delegate bounded work only for independent parallel work, useful context isolation, specialized capability, or independent review. A plan, phase transition, role definition, or JSONL manifest alone does not require dispatch.
+- For main-session work, load `trellis-before-dev`, implement directly, and use the `trellis-check` skill. When delegating, keep one writer per scope; the parent continues independent work and waits when it needs the result.
+- Explicit Codex `inline` keeps implementation/checks in the main session. Respect the user's inline request.
+- Other platforms and explicitly selected worker workflows follow their own routing blocks in the resolved workflow. Sub-agent support alone does not determine Codex ownership.
 
 When changing local AI behavior, update the routing descriptions in `workflow.md` first, then check whether the corresponding platform skill, command, or agent files need to stay in sync.
 
